@@ -1,27 +1,44 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Gen-AI Summary</title>
-  <link rel="stylesheet" type="text/css" href="popup.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gen-AI Summary</title>
+    <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <h1>Gen-AI Summary</h1>
-    <button id="summarize">Summarize</button>
-    <div id="summary-container" style="display:none;">
-      <h2>Summary</h2>
-      <p id="summary"></p>
+    <div class="container">
+        <div class="header">
+            <h1>Gen-AI Summary</h1>
+            <select id="model-select">
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <option value="gpt-4">GPT-4</option>
+                <option value="claude-3">Claude 3</option>
+            </select>
+        </div>
+        <div class="main-content">
+            <div class="action-buttons">
+                <button id="summarize">Summarize</button>
+                <button id="ask-question">Ask a Question</button>
+            </div>
+            <div id="summary-container" class="output-container" style="display:none;">
+                <h2>Summary</h2>
+                <p id="summary"></p>
+            </div>
+            <div id="qa-container" class="output-container" style="display:none;">
+                <h2>Ask a Question</h2>
+                <textarea id="question" placeholder="Ask something about the page..."></textarea>
+                <button id="ask">Ask</button>
+                <div id="answer-container" style="display:none;">
+                    <h3>Answer</h3>
+                    <p id="answer"></p>
+                </div>
+            </div>
+        </div>
+        <div class="footer">
+            <p>Powered by Gen-AI</p>
+        </div>
     </div>
-    <div id="qa-container">
-      <h2>Ask a Question</h2>
-      <textarea id="question" placeholder="Ask something about the page..."></textarea>
-      <button id="ask">Ask</button>
-      <div id="answer-container" style="display:none;">
-        <h3>Answer</h3>
-        <p id="answer"></p>
-      </div>
-    </div>
-  </div>
-  <script src="popup.js"></script>
+    <script src="popup.js"></script>
 </body>
 </html>
