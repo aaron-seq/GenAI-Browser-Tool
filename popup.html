@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Gen-AI Summary</title>
+  <link rel="stylesheet" type="text/css" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Gen-AI Summary</h1>
+    <button id="summarize">Summarize</button>
+    <div id="summary-container" style="display:none;">
+      <h2>Summary</h2>
+      <p id="summary"></p>
+    </div>
+    <div id="qa-container">
+      <h2>Ask a Question</h2>
+      <textarea id="question" placeholder="Ask something about the page..."></textarea>
+      <button id="ask">Ask</button>
+      <div id="answer-container" style="display:none;">
+        <h3>Answer</h3>
+        <p id="answer"></p>
+      </div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
