@@ -1,29 +1,40 @@
 {
   "manifest_version": 3,
   "name": "Gen-AI Browser Summary Tool",
-  "version": "1.0",
-  "description": "Summarize and ask questions about any webpage with the power of AI.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "version": "1.0.0",
+  "description": "An advanced browser extension that uses the power of Generative AI to summarize web pages, answer your questions, and provide a suite of tools to enhance your browsing experience.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "images/icon16.png",
-      "48": "images/icon48.png",
-      "128": "images/icon128.png"
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
     }
   },
   "icons": {
-    "16": "images/icon16.png",
-    "48": "images/icon48.png",
-    "128": "images/icon128.png"
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ]
     }
   ]
 }
