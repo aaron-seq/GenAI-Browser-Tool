@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Gen-AI Browser Summary Tool",
-  "version": "1.0.0",
-  "description": "An advanced browser extension that uses the power of Generative AI to summarize web pages, answer your questions, and provide a suite of tools to enhance your browsing experience.",
+  "name": "Gen-AI Browser Tool (Upgraded)",
+  "version": "2.0.0",
+  "description": "An upgraded browser extension to summarize web pages and answer questions using the Gemini API.",
   "permissions": [
+    "storage",
     "activeTab",
-    "scripting",
-    "storage"
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -36,5 +36,7 @@
         "content.js"
       ]
     }
-  ]
+  ],
+  "options_page": "options.html"
 }
+
