@@ -3,42 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gen-AI Summary</title>
-    <link rel="stylesheet" href="popup.css">
+    <title>Gen-AI Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            width: 400px;
+            font-family: 'Inter', sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Gen-AI Summary</h1>
-            <select id="model-select">
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                <option value="gpt-4">GPT-4</option>
-                <option value="claude-3">Claude 3</option>
-            </select>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="app" class="p-4">
+        <!-- Header -->
+        <div class="flex justify-between items-center pb-3 border-b border-slate-200">
+            <h1 class="text-lg font-bold text-violet-600">Gen-AI Tool</h1>
+            <a href="#" id="open-options" title="Settings">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500 hover:text-violet-600 transition-colors"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </a>
         </div>
-        <div class="main-content">
-            <div class="action-buttons">
-                <button id="summarize">Summarize</button>
-                <button id="ask-question">Ask a Question</button>
+
+        <!-- API Key Missing Warning -->
+        <div id="api-key-warning" class="hidden mt-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-3 rounded-md">
+            <p class="text-sm">API key not set. Please <a href="#" id="open-options-link" class="font-bold underline">go to options</a> to add your key.</p>
+        </div>
+
+        <!-- Main Content -->
+        <div id="main-content" class="mt-4">
+            <!-- Action Buttons -->
+            <div class="grid grid-cols-2 gap-3">
+                <button id="summarize" class="w-full bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-violet-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500">Summarize</button>
+                <button id="ask-question-view" class="w-full bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400">Ask Question</button>
             </div>
-            <div id="summary-container" class="output-container" style="display:none;">
-                <h2>Summary</h2>
-                <p id="summary"></p>
+
+            <!-- Q&A View -->
+            <div id="qa-container" class="hidden mt-4 space-y-3">
+                <textarea id="question-input" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500" rows="3" placeholder="Ask something about the page..."></textarea>
+                <button id="ask-btn" class="w-full bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-violet-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500">Submit Question</button>
             </div>
-            <div id="qa-container" class="output-container" style="display:none;">
-                <h2>Ask a Question</h2>
-                <textarea id="question" placeholder="Ask something about the page..."></textarea>
-                <button id="ask">Ask</button>
-                <div id="answer-container" style="display:none;">
-                    <h3>Answer</h3>
-                    <p id="answer"></p>
+
+            <!-- Output Area -->
+            <div id="output-container" class="mt-4 hidden">
+                <div class="bg-white p-4 border border-slate-200 rounded-lg shadow-sm">
+                    <!-- Loading Spinner -->
+                    <div id="loader" class="hidden flex items-center justify-center py-6">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
+                        <p class="ml-3 text-slate-500">Generating...</p>
+                    </div>
+                    <!-- Error Message -->
+                    <div id="error-message" class="hidden bg-red-100 text-red-700 p-3 rounded-md text-sm"></div>
+                    <!-- Result -->
+                    <div id="result-view" class="hidden">
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-md font-bold text-slate-700">Result</h2>
+                            <button id="copy-btn" class="text-sm text-slate-500 hover:text-violet-600 font-medium flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                <span id="copy-text">Copy</span>
+                            </button>
+                        </div>
+                        <div id="result-text" class="prose prose-sm max-w-none text-slate-600 whitespace-pre-wrap"></div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="footer">
-            <p>Powered by Gen-AI</p>
-        </div>
     </div>
+
     <script src="popup.js"></script>
 </body>
 </html>
+
