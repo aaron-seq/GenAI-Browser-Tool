@@ -17,7 +17,7 @@ An advanced browser extension that uses the power of Generative AI to summarize 
 
 1.  Clone this repository:
     ```bash
-    git clone [https://github.com/your-username/gen-ai-summary-tool.git](https://github.com/aaronseq12/GenAI_Browser_Tool.git)
+    git clone [https://github.com/aaronseq12/GenAI_Browser_Tool.git](https://github.com/aaronseq12/GenAI_Browser_Tool.git)
     ```
 2.  Open your browser's extension page (`chrome://extensions` or `edge://extensions`).
 3.  Enable "Developer mode".
