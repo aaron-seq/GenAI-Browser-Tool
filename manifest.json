@@ -1,42 +1,87 @@
 {
   "manifest_version": 3,
-  "name": "Gen-AI Browser Tool (Upgraded)",
-  "version": "2.0.0",
-  "description": "An upgraded browser extension to summarize web pages and answer questions using the Gemini API.",
+  "name": "GenAI Browser Tool - Advanced AI Assistant",
+  "version": "3.0.0",
+  "description": "Advanced AI-powered browser extension with intelligent summarization, Q&A, translation, sentiment analysis, and smart content management.",
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "offscreen",
+    "contextMenus",
+    "notifications",
+    "clipboardWrite",
+    "clipboardRead",
+    "unlimitedStorage"
+  ],
+  "optional_permissions": [
+    "bookmarks",
+    "history",
+    "tabs"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "*://*/*"
   ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
   },
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "*://*/*"
       ],
       "js": [
         "content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "offscreen.html"
+      ],
+      "matches": [
+        "*://*/*"
       ]
     }
   ],
-  "options_page": "options.html"
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://*.openai.com https://*.anthropic.com https://*.googleapis.com https://api.gemini.google.com;"
+  },
+  "commands": {
+    "summarize_page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Summarize current page"
+    },
+    "toggle_popup": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+A",
+        "mac": "Command+Shift+A"
+      },
+      "description": "Toggle AI assistant popup"
+    }
+  },
+  "incognito": "spanning",
+  "minimum_chrome_version": "130"
 }
-
