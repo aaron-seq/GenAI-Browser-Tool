@@ -1,5 +1,6 @@
 
-# Gen-AI Browser Summary Tool (Advanced Edition)
+# Gen-AI Browser Summary Tool 2.0
+
 
 An advanced browser extension using the latest in Generative AI to **summarize web pages**, answer your questions intelligently, and provide a suite of AI-powered tools to maximize your browsing experience.
 
