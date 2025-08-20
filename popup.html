@@ -3,73 +3,393 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gen-AI Tool</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body {
-            width: 400px;
-            font-family: 'Inter', sans-serif;
-        }
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    </style>
+    <title>GenAI Browser Tool</title>
+    <link rel="stylesheet" href="popup.css">
 </head>
-<body class="bg-slate-50 text-slate-800">
-
-    <div id="app" class="p-4">
+<body>
+    <div class="app-container">
         <!-- Header -->
-        <div class="flex justify-between items-center pb-3 border-b border-slate-200">
-            <h1 class="text-lg font-bold text-violet-600">Gen-AI Tool</h1>
-            <a href="#" id="open-options" title="Settings">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500 hover:text-violet-600 transition-colors"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-            </a>
-        </div>
+        <header class="app-header">
+            <div class="header-content">
+                <div class="logo-section">
+                    <div class="logo-icon">🤖</div>
+                    <h1 class="app-title">GenAI Assistant</h1>
+                </div>
+                <div class="header-actions">
+                    <button id="theme-toggle" class="icon-button" title="Toggle theme">
+                        <span class="icon">🌙</span>
+                    </button>
+                    <button id="settings-button" class="icon-button" title="Settings">
+                        <span class="icon">⚙️</span>
+                    </button>
+                </div>
+            </div>
+        </header>
 
-        <!-- API Key Missing Warning -->
-        <div id="api-key-warning" class="hidden mt-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-3 rounded-md">
-            <p class="text-sm">API key not set. Please <a href="#" id="open-options-link" class="font-bold underline">go to options</a> to add your key.</p>
+        <!-- Status Bar -->
+        <div class="status-bar" id="status-bar">
+            <div class="status-content">
+                <span class="status-text" id="status-text">Ready</span>
+                <div class="status-indicator" id="status-indicator"></div>
+            </div>
         </div>
 
         <!-- Main Content -->
-        <div id="main-content" class="mt-4">
-            <!-- Action Buttons -->
-            <div class="grid grid-cols-2 gap-3">
-                <button id="summarize" class="w-full bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-violet-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500">Summarize</button>
-                <button id="ask-question-view" class="w-full bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400">Ask Question</button>
-            </div>
+        <main class="main-content">
+            <!-- Tab Navigation -->
+            <nav class="tab-navigation">
+                <button class="tab-button active" data-tab="summarize">
+                    <span class="icon">📝</span>
+                    <span class="label">Summarize</span>
+                </button>
+                <button class="tab-button" data-tab="qa">
+                    <span class="icon">❓</span>
+                    <span class="label">Q&A</span>
+                </button>
+                <button class="tab-button" data-tab="translate">
+                    <span class="icon">🌐</span>
+                    <span class="label">Translate</span>
+                </button>
+                <button class="tab-button" data-tab="analyze">
+                    <span class="icon">📊</span>
+                    <span class="label">Analyze</span>
+                </button>
+                <button class="tab-button" data-tab="tools">
+                    <span class="icon">🛠️</span>
+                    <span class="label">Tools</span>
+                </button>
+            </nav>
 
-            <!-- Q&A View -->
-            <div id="qa-container" class="hidden mt-4 space-y-3">
-                <textarea id="question-input" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500" rows="3" placeholder="Ask something about the page..."></textarea>
-                <button id="ask-btn" class="w-full bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-violet-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500">Submit Question</button>
-            </div>
-
-            <!-- Output Area -->
-            <div id="output-container" class="mt-4 hidden">
-                <div class="bg-white p-4 border border-slate-200 rounded-lg shadow-sm">
-                    <!-- Loading Spinner -->
-                    <div id="loader" class="hidden flex items-center justify-center py-6">
-                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
-                        <p class="ml-3 text-slate-500">Generating...</p>
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <!-- Summarize Tab -->
+                <div class="tab-pane active" id="summarize-tab">
+                    <div class="section-header">
+                        <h2>📝 Smart Summarization</h2>
+                        <p>Generate intelligent summaries of web content</p>
                     </div>
-                    <!-- Error Message -->
-                    <div id="error-message" class="hidden bg-red-100 text-red-700 p-3 rounded-md text-sm"></div>
-                    <!-- Result -->
-                    <div id="result-view" class="hidden">
-                        <div class="flex justify-between items-center mb-2">
-                            <h2 class="text-md font-bold text-slate-700">Result</h2>
-                            <button id="copy-btn" class="text-sm text-slate-500 hover:text-violet-600 font-medium flex items-center gap-1">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                <span id="copy-text">Copy</span>
-                            </button>
+
+                    <div class="controls-group">
+                        <div class="control-row">
+                            <label for="summary-type">Summary Type:</label>
+                            <select id="summary-type" class="select-input">
+                                <option value="key-points">Key Points</option>
+                                <option value="tldr">TL;DR</option>
+                                <option value="teaser">Teaser</option>
+                                <option value="headline">Headline</option>
+                            </select>
                         </div>
-                        <div id="result-text" class="prose prose-sm max-w-none text-slate-600 whitespace-pre-wrap"></div>
+
+                        <div class="control-row">
+                            <label for="summary-length">Length:</label>
+                            <div class="radio-group">
+                                <label class="radio-option">
+                                    <input type="radio" name="summary-length" value="short" id="length-short">
+                                    <span>Short</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="summary-length" value="medium" id="length-medium" checked>
+                                    <span>Medium</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="summary-length" value="long" id="length-long">
+                                    <span>Long</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="control-row">
+                            <label class="checkbox-option">
+                                <input type="checkbox" id="auto-summarize">
+                                <span>Auto-summarize when page loads</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button id="summarize-page" class="primary-button">
+                            <span class="icon">📄</span>
+                            Summarize Page
+                        </button>
+                        <button id="summarize-selection" class="secondary-button">
+                            <span class="icon">✂️</span>
+                            Summarize Selection
+                        </button>
+                    </div>
+
+                    <div class="result-container" id="summary-result">
+                        <div class="result-header">
+                            <h3>Summary</h3>
+                            <div class="result-actions">
+                                <button class="icon-button" id="copy-summary" title="Copy to clipboard">
+                                    <span class="icon">📋</span>
+                                </button>
+                                <button class="icon-button" id="save-summary" title="Save to bookmarks">
+                                    <span class="icon">💾</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="result-content" id="summary-text">
+                            <div class="placeholder">
+                                Click "Summarize Page" to generate a summary of the current webpage.
+                            </div>
+                        </div>
+                        <div class="result-metadata" id="summary-metadata"></div>
+                    </div>
+                </div>
+
+                <!-- Q&A Tab -->
+                <div class="tab-pane" id="qa-tab">
+                    <div class="section-header">
+                        <h2>❓ Intelligent Q&A</h2>
+                        <p>Ask questions about the current page content</p>
+                    </div>
+
+                    <div class="chat-container">
+                        <div class="chat-history" id="chat-history">
+                            <div class="chat-welcome">
+                                <div class="welcome-icon">🤖</div>
+                                <h3>Ask me anything about this page!</h3>
+                                <p>I can help you understand the content, find specific information, or answer questions based on what's displayed.</p>
+                            </div>
+                        </div>
+
+                        <div class="chat-input-container">
+                            <div class="input-wrapper">
+                                <textarea 
+                                    id="question-input" 
+                                    class="chat-input" 
+                                    placeholder="Ask a question about this page..."
+                                    rows="2"
+                                ></textarea>
+                                <button id="ask-button" class="send-button" title="Send question">
+                                    <span class="icon">📤</span>
+                                </button>
+                            </div>
+                            <div class="input-suggestions">
+                                <button class="suggestion-chip" data-question="What is the main topic of this page?">
+                                    Main topic
+                                </button>
+                                <button class="suggestion-chip" data-question="Can you explain the key concepts?">
+                                    Key concepts
+                                </button>
+                                <button class="suggestion-chip" data-question="What are the important takeaways?">
+                                    Takeaways
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Translate Tab -->
+                <div class="tab-pane" id="translate-tab">
+                    <div class="section-header">
+                        <h2>🌐 Smart Translation</h2>
+                        <p>Translate page content or selected text</p>
+                    </div>
+
+                    <div class="controls-group">
+                        <div class="control-row">
+                            <label for="source-language">From:</label>
+                            <select id="source-language" class="select-input">
+                                <option value="auto">Auto-detect</option>
+                                <option value="en">English</option>
+                                <option value="es">Spanish</option>
+                                <option value="fr">French</option>
+                                <option value="de">German</option>
+                                <option value="it">Italian</option>
+                                <option value="pt">Portuguese</option>
+                                <option value="ru">Russian</option>
+                                <option value="ja">Japanese</option>
+                                <option value="ko">Korean</option>
+                                <option value="zh">Chinese</option>
+                                <option value="ar">Arabic</option>
+                                <option value="hi">Hindi</option>
+                            </select>
+                        </div>
+
+                        <div class="control-row">
+                            <label for="target-language">To:</label>
+                            <select id="target-language" class="select-input">
+                                <option value="en">English</option>
+                                <option value="es">Spanish</option>
+                                <option value="fr">French</option>
+                                <option value="de">German</option>
+                                <option value="it">Italian</option>
+                                <option value="pt">Portuguese</option>
+                                <option value="ru">Russian</option>
+                                <option value="ja">Japanese</option>
+                                <option value="ko">Korean</option>
+                                <option value="zh">Chinese</option>
+                                <option value="ar">Arabic</option>
+                                <option value="hi">Hindi</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button id="translate-page" class="primary-button">
+                            <span class="icon">🌍</span>
+                            Translate Page
+                        </button>
+                        <button id="translate-selection" class="secondary-button">
+                            <span class="icon">🎯</span>
+                            Translate Selection
+                        </button>
+                    </div>
+
+                    <div class="result-container" id="translation-result">
+                        <div class="result-header">
+                            <h3>Translation</h3>
+                            <div class="result-actions">
+                                <button class="icon-button" id="copy-translation" title="Copy translation">
+                                    <span class="icon">📋</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="result-content" id="translation-text">
+                            <div class="placeholder">
+                                Select text and click "Translate Selection" or translate the entire page.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analyze Tab -->
+                <div class="tab-pane" id="analyze-tab">
+                    <div class="section-header">
+                        <h2>📊 Content Analysis</h2>
+                        <p>Analyze page content and extract insights</p>
+                    </div>
+
+                    <div class="analysis-grid">
+                        <div class="analysis-card" id="sentiment-card">
+                            <div class="card-icon">😊</div>
+                            <h3>Sentiment Analysis</h3>
+                            <div class="metric-value" id="sentiment-value">--</div>
+                            <button class="card-action" id="analyze-sentiment">Analyze</button>
+                        </div>
+
+                        <div class="analysis-card" id="readability-card">
+                            <div class="card-icon">📚</div>
+                            <h3>Readability</h3>
+                            <div class="metric-value" id="readability-value">--</div>
+                            <button class="card-action" id="analyze-readability">Analyze</button>
+                        </div>
+
+                        <div class="analysis-card" id="keywords-card">
+                            <div class="card-icon">🔤</div>
+                            <h3>Keywords</h3>
+                            <div class="metric-value" id="keywords-count">--</div>
+                            <button class="card-action" id="extract-keywords">Extract</button>
+                        </div>
+
+                        <div class="analysis-card" id="structure-card">
+                            <div class="card-icon">🏗️</div>
+                            <h3>Page Structure</h3>
+                            <div class="metric-value" id="structure-score">--</div>
+                            <button class="card-action" id="analyze-structure">Analyze</button>
+                        </div>
+                    </div>
+
+                    <div class="analysis-details" id="analysis-details">
+                        <div class="placeholder">
+                            Click on any analysis card above to see detailed results.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tools Tab -->
+                <div class="tab-pane" id="tools-tab">
+                    <div class="section-header">
+                        <h2>🛠️ Utility Tools</h2>
+                        <p>Additional tools and features</p>
+                    </div>
+
+                    <div class="tools-grid">
+                        <div class="tool-card">
+                            <div class="tool-icon">📖</div>
+                            <h3>Reading Time</h3>
+                            <p>Estimate reading time for the page</p>
+                            <div class="tool-result" id="reading-time">--</div>
+                            <button class="tool-action" id="calculate-reading-time">Calculate</button>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">🔢</div>
+                            <h3>Word Count</h3>
+                            <p>Count words and characters</p>
+                            <div class="tool-result" id="word-count">--</div>
+                            <button class="tool-action" id="count-words">Count</button>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">🔗</div>
+                            <h3>Extract Links</h3>
+                            <p>Get all links from the page</p>
+                            <div class="tool-result" id="links-count">--</div>
+                            <button class="tool-action" id="extract-links">Extract</button>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">🖼️</div>
+                            <h3>Extract Images</h3>
+                            <p>List all images on the page</p>
+                            <div class="tool-result" id="images-count">--</div>
+                            <button class="tool-action" id="extract-images">Extract</button>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">📥</div>
+                            <h3>Export Data</h3>
+                            <p>Export analysis results</p>
+                            <div class="export-options">
+                                <select id="export-format" class="mini-select">
+                                    <option value="json">JSON</option>
+                                    <option value="csv">CSV</option>
+                                    <option value="txt">Text</option>
+                                </select>
+                            </div>
+                            <button class="tool-action" id="export-data">Export</button>
+                        </div>
+
+                        <div class="tool-card">
+                            <div class="tool-icon">🏷️</div>
+                            <h3>Smart Tags</h3>
+                            <p>Generate AI-powered tags</p>
+                            <div class="tool-result" id="tags-result">--</div>
+                            <button class="tool-action" id="generate-tags">Generate</button>
+                        </div>
                     </div>
                 </div>
             </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <div class="footer-content">
+                <div class="provider-info">
+                    <span class="provider-label">AI Provider:</span>
+                    <span class="provider-name" id="current-provider">Chrome AI</span>
+                </div>
+                <div class="usage-info">
+                    <span class="usage-label">Tokens:</span>
+                    <span class="usage-count" id="token-count">0</span>
+                </div>
+            </div>
+        </footer>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loading-overlay">
+            <div class="loading-spinner"></div>
+            <div class="loading-text" id="loading-text">Processing...</div>
         </div>
     </div>
 
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Scripts -->
     <script src="popup.js"></script>
 </body>
 </html>
-
