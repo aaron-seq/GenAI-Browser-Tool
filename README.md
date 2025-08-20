@@ -62,13 +62,3 @@ We welcome all contributions! Open an issue, submit a pull request, or contribut
 ## 📄 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
----
-
-## 🏁 Repository
-
-[https://github.com/aaronseq12/GenAI-Browser-Tool](https://github.com/aaronseq12/GenAI-Browser-Tool)
-
----
-
-**Transform your browsing into an AI-powered experience – fast, private, and open.**
