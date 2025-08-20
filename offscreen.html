@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GenAI Offscreen Document</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: none; /* Hidden offscreen document */
+        }
+        
+        #clipboard-area {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+        }
+        
+        #processing-area {
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <!-- Hidden areas for clipboard and processing operations -->
+    <textarea id="clipboard-area" readonly></textarea>
+    <div id="processing-area"></div>
+    
+    <!-- Canvas for image processing -->
+    <canvas id="image-canvas" style="display: none;"></canvas>
+    
+    <!-- Script inclusion -->
+    <script src="offscreen.js"></script>
+</body>
+</html>
