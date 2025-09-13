@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GenAI Browser Tool - Settings</title>
     <link rel="stylesheet" href="options.css">
 </head>
+
 <body>
     <div class="settings-container">
         <!-- Header -->
@@ -14,253 +16,56 @@
                 <div class="logo-section">
                     <div class="logo-icon">🤖</div>
                     <div class="title-section">
-                        <h1>GenAI Browser Tool</h1>
+                        <h1>GenAI Browser Tool Settings</h1>
                         <p class="version">Version 3.0.0</p>
                     </div>
-                </div>
-                <div class="header-actions">
-                    <button id="import-data" class="header-button">
-                        <span class="icon">📥</span>
-                        Import
-                    </button>
-                    <button id="export-data" class="header-button">
-                        <span class="icon">📤</span>
-                        Export
-                    </button>
                 </div>
             </div>
         </header>
 
-        <!-- Welcome section (shown only on first install) -->
+        <!-- Welcome Section -->
         <section class="welcome-section" id="welcome-section" style="display: none;">
-            <div class="welcome-content">
-                <h2>🎉 Welcome to GenAI Browser Tool!</h2>
-                <p>Thank you for installing our advanced AI-powered browser extension. Let's get you set up with your preferred AI provider and customize your experience.</p>
-                <div class="welcome-features">
-                    <div class="feature-item">
-                        <span class="feature-icon">📝</span>
-                        <div>
-                            <h3>Smart Summarization</h3>
-                            <p>Generate intelligent summaries of any webpage content</p>
-                        </div>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">❓</span>
-                        <div>
-                            <h3>Interactive Q&A</h3>
-                            <p>Ask questions about page content and get AI-powered answers</p>
-                        </div>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">🌐</span>
-                        <div>
-                            <h3>Language Translation</h3>
-                            <p>Translate text and entire pages with advanced AI models</p>
-                        </div>
-                    </div>
-                    <div class="feature-item">
-                        <span class="feature-icon">📊</span>
-                        <div>
-                            <h3>Content Analysis</h3>
-                            <p>Analyze sentiment, readability, and extract key insights</p>
-                        </div>
-                    </div>
-                </div>
-                <button id="get-started" class="welcome-button">Get Started</button>
-            </div>
+            <h2>Welcome to GenAI Browser Tool!</h2>
+            <p>Let's get you set up. Choose your preferred AI provider below.</p>
+            <button id="get-started">Get Started</button>
         </section>
 
-        <!-- Main content -->
+        <!-- Main Content -->
         <main class="settings-main">
             <!-- Navigation -->
             <nav class="settings-nav">
                 <div class="nav-group">
                     <h3>Configuration</h3>
-                    <button class="nav-item active" data-section="ai-providers">
-                        <span class="icon">🧠</span>
-                        AI Providers
-                    </button>
-                    <button class="nav-item" data-section="features">
-                        <span class="icon">⚡</span>
-                        Features
-                    </button>
-                    <button class="nav-item" data-section="interface">
-                        <span class="icon">🎨</span>
-                        Interface
-                    </button>
-                    <button class="nav-item" data-section="privacy">
-                        <span class="icon">🔒</span>
-                        Privacy
-                    </button>
+                    <button class="nav-item active" data-section="ai-providers">AI Providers</button>
+                    <button class="nav-item" data-section="features">Features</button>
                 </div>
-                
                 <div class="nav-group">
                     <h3>Data</h3>
-                    <button class="nav-item" data-section="bookmarks">
-                        <span class="icon">🔖</span>
-                        Bookmarks
-                    </button>
-                    <button class="nav-item" data-section="history">
-                        <span class="icon">📈</span>
-                        Usage History
-                    </button>
-                    <button class="nav-item" data-section="storage">
-                        <span class="icon">💾</span>
-                        Storage
-                    </button>
-                </div>
-
-                <div class="nav-group">
-                    <h3>Support</h3>
-                    <button class="nav-item" data-section="about">
-                        <span class="icon">ℹ️</span>
-                        About
-                    </button>
-                    <button class="nav-item" data-section="help">
-                        <span class="icon">❓</span>
-                        Help
-                    </button>
+                    <button class="nav-item" data-section="privacy">Privacy</button>
                 </div>
             </nav>
 
-            <!-- Content sections -->
+            <!-- Content Sections -->
             <div class="settings-content">
                 <!-- AI Providers Section -->
                 <section class="settings-section active" id="ai-providers-section">
                     <div class="section-header">
-                        <h2>🧠 AI Providers</h2>
-                        <p>Configure your preferred AI providers and API keys</p>
+                        <h2>AI Providers</h2>
+                        <p>Configure your preferred AI providers and API keys.</p>
                     </div>
-
-                    <div class="provider-selector">
+                    <div class="setting-group">
                         <h3>Primary AI Provider</h3>
                         <div class="provider-options">
-                            <label class="provider-option">
-                                <input type="radio" name="primary-provider" value="chrome-ai" checked>
-                                <div class="provider-card">
-                                    <div class="provider-info">
-                                        <h4>Chrome Built-in AI</h4>
-                                        <p>Uses Chrome's local AI models (Gemini Nano)</p>
-                                        <div class="provider-badges">
-                                            <span class="badge badge-success">Free</span>
-                                            <span class="badge badge-info">Local</span>
-                                            <span class="badge badge-info">Private</span>
-                                        </div>
-                                    </div>
-                                    <div class="provider-status" id="chrome-ai-status">
-                                        <span class="status-indicator"></span>
-                                        <span class="status-text">Checking...</span>
-                                    </div>
-                                </div>
-                            </label>
-
-                            <label class="provider-option">
-                                <input type="radio" name="primary-provider" value="openai">
-                                <div class="provider-card">
-                                    <div class="provider-info">
-                                        <h4>OpenAI</h4>
-                                        <p>GPT-3.5 and GPT-4 models via OpenAI API</p>
-                                        <div class="provider-badges">
-                                            <span class="badge badge-warning">Paid</span>
-                                            <span class="badge badge-info">Cloud</span>
-                                        </div>
-                                    </div>
-                                    <div class="provider-status" id="openai-status">
-                                        <span class="status-indicator"></span>
-                                        <span class="status-text">Not configured</span>
-                                    </div>
-                                </div>
-                            </label>
-
-                            <label class="provider-option">
-                                <input type="radio" name="primary-provider" value="anthropic">
-                                <div class="provider-card">
-                                    <div class="provider-info">
-                                        <h4>Anthropic Claude</h4>
-                                        <p>Claude 3 models via Anthropic API</p>
-                                        <div class="provider-badges">
-                                            <span class="badge badge-warning">Paid</span>
-                                            <span class="badge badge-info">Cloud</span>
-                                        </div>
-                                    </div>
-                                    <div class="provider-status" id="anthropic-status">
-                                        <span class="status-indicator"></span>
-                                        <span class="status-text">Not configured</span>
-                                    </div>
-                                </div>
-                            </label>
-
-                            <label class="provider-option">
-                                <input type="radio" name="primary-provider" value="gemini">
-                                <div class="provider-card">
-                                    <div class="provider-info">
-                                        <h4>Google Gemini</h4>
-                                        <p>Gemini Pro models via Google AI API</p>
-                                        <div class="provider-badges">
-                                            <span class="badge badge-warning">Paid</span>
-                                            <span class="badge badge-info">Cloud</span>
-                                        </div>
-                                    </div>
-                                    <div class="provider-status" id="gemini-status">
-                                        <span class="status-indicator"></span>
-                                        <span class="status-text">Not configured</span>
-                                    </div>
-                                </div>
-                            </label>
+                            <label><input type="radio" name="primary-provider" value="chrome-ai"> Chrome Built-in AI</label>
+                            <label><input type="radio" name="primary-provider" value="openai"> OpenAI</label>
+                            <!-- Add other providers as needed -->
                         </div>
                     </div>
-
-                    <div class="api-keys-section">
-                        <h3>API Keys Configuration</h3>
-                        <div class="api-key-group">
+                    <div class="setting-group">
+                        <h3>API Keys</h3>
+                        <div class="setting-item">
                             <label for="openai-key">OpenAI API Key</label>
-                            <div class="key-input-group">
-                                <input type="password" id="openai-key" placeholder="sk-...">
-                                <button type="button" class="toggle-visibility" data-target="openai-key">👁️</button>
-                                <button type="button" class="test-key" data-provider="openai">Test</button>
-                            </div>
-                            <small class="help-text">
-                                Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a>
-                            </small>
-                        </div>
-
-                        <div class="api-key-group">
-                            <label for="anthropic-key">Anthropic API Key</label>
-                            <div class="key-input-group">
-                                <input type="password" id="anthropic-key" placeholder="sk-ant-...">
-                                <button type="button" class="toggle-visibility" data-target="anthropic-key">👁️</button>
-                                <button type="button" class="test-key" data-provider="anthropic">Test</button>
-                            </div>
-                            <small class="help-text">
-                                Get your API key from <a href="https://console.anthropic.com/" target="_blank">Anthropic Console</a>
-                            </small>
-                        </div>
-
-                        <div class="api-key-group">
-                            <label for="gemini-key">Google Gemini API Key</label>
-                            <div class="key-input-group">
-                                <input type="password" id="gemini-key" placeholder="AI...">
-                                <button type="button" class="toggle-visibility" data-target="gemini-key">👁️</button>
-                                <button type="button" class="test-key" data-provider="gemini">Test</button>
-                            </div>
-                            <small class="help-text">
-                                Get your API key from <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a>
-                            </small>
-                        </div>
-                    </div>
-
-                    <div class="model-preferences">
-                        <h3>Model Preferences</h3>
-                        <div class="preference-group">
-                            <label for="default-model">Default Model</label>
-                            <select id="default-model">
-                                <option value="auto">Auto (Provider Default)</option>
-                                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                                <option value="gpt-4">GPT-4</option>
-                                <option value="claude-3-haiku">Claude 3 Haiku</option>
-                                <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                                <option value="gemini-pro">Gemini Pro</option>
-                            </select>
+                            <input type="password" id="openai-key" placeholder="Enter your OpenAI API key">
                         </div>
                     </div>
                 </section>
@@ -268,156 +73,18 @@
                 <!-- Features Section -->
                 <section class="settings-section" id="features-section">
                     <div class="section-header">
-                        <h2>⚡ Features</h2>
-                        <p>Enable and configure extension features</p>
+                        <h2>Features</h2>
+                        <p>Enable and configure extension features.</p>
                     </div>
-
-                    <div class="feature-toggles">
-                        <h3>Core Features</h3>
-                        <div class="toggle-group">
-                            <div class="toggle-item">
-                                <div class="toggle-info">
-                                    <h4>Smart Bookmarks</h4>
-                                    <p>Automatically tag and organize bookmarks with AI</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="smart-bookmarks" checked>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="toggle-item">
-                                <div class="toggle-info">
-                                    <h4>Context Menus</h4>
-                                    <p>Add AI actions to right-click context menus</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="context-menus" checked>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="toggle-item">
-                                <div class="toggle-info">
-                                    <h4>Auto Analysis</h4>
-                                    <p>Automatically analyze pages when they load</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="auto-analysis">
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="toggle-item">
-                                <div class="toggle-info">
-                                    <h4>Notifications</h4>
-                                    <p>Show desktop notifications for AI operations</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="notifications" checked>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="toggle-item">
-                                <div class="toggle-info">
-                                    <h4>Keyboard Shortcuts</h4>
-                                    <p>Enable keyboard shortcuts for quick actions</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="keyboard-shortcuts" checked>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
+                    <div class="setting-group">
+                        <div class="setting-item">
+                            <label><input type="checkbox" id="smart-bookmarks"> Enable Smart Bookmarks</label>
                         </div>
-
-                        <h3>Summarization Defaults</h3>
-                        <div class="defaults-group">
-                            <div class="default-setting">
-                                <label for="default-summary-type">Default Summary Type</label>
-                                <select id="default-summary-type">
-                                    <option value="key-points">Key Points</option>
-                                    <option value="tldr">TL;DR</option>
-                                    <option value="teaser">Teaser</option>
-                                    <option value="headline">Headline</option>
-                                </select>
-                            </div>
-
-                            <div class="default-setting">
-                                <label for="default-summary-length">Default Summary Length</label>
-                                <select id="default-summary-length">
-                                    <option value="short">Short</option>
-                                    <option value="medium">Medium</option>
-                                    <option value="long">Long</option>
-                                </select>
-                            </div>
-
-                            <div class="default-setting">
-                                <label for="default-summary-format">Default Summary Format</label>
-                                <select id="default-summary-format">
-                                    <option value="markdown">Markdown</option>
-                                    <option value="plain-text">Plain Text</option>
-                                </select>
-                            </div>
+                        <div class="setting-item">
+                            <label><input type="checkbox" id="context-menus"> Enable Context Menus</label>
                         </div>
-                    </div>
-                </section>
-
-                <!-- Interface Section -->
-                <section class="settings-section" id="interface-section">
-                    <div class="section-header">
-                        <h2>🎨 Interface</h2>
-                        <p>Customize the look and feel of the extension</p>
-                    </div>
-
-                    <div class="interface-settings">
-                        <div class="setting-group">
-                            <h3>Appearance</h3>
-                            <div class="setting-item">
-                                <label for="theme-setting">Theme</label>
-                                <select id="theme-setting">
-                                    <option value="auto">Auto (System)</option>
-                                    <option value="light">Light</option>
-                                    <option value="dark">Dark</option>
-                                </select>
-                            </div>
-
-                            <div class="setting-item">
-                                <label for="language-setting">Language</label>
-                                <select id="language-setting">
-                                    <option value="en">English</option>
-                                    <option value="es">Español</option>
-                                    <option value="fr">Français</option>
-                                    <option value="de">Deutsch</option>
-                                    <option value="ja">日本語</option>
-                                    <option value="zh">中文</option>
-                                </select>
-                            </div>
-
-                            <div class="setting-item checkbox-setting">
-                                <label>
-                                    <input type="checkbox" id="compact-mode">
-                                    <span>Compact Mode</span>
-                                </label>
-                                <small>Use a more compact interface layout</small>
-                            </div>
-                        </div>
-
-                        <div class="setting-group">
-                            <h3>Information Display</h3>
-                            <div class="setting-item checkbox-setting">
-                                <label>
-                                    <input type="checkbox" id="show-reading-time" checked>
-                                    <span>Show Reading Time</span>
-                                </label>
-                            </div>
-
-                            <div class="setting-item checkbox-setting">
-                                <label>
-                                    <input type="checkbox" id="show-word-count" checked>
-                                    <span>Show Word Count</span>
-                                </label>
-                            </div>
+                        <div class="setting-item">
+                            <label><input type="checkbox" id="auto-analysis"> Enable Auto Page Analysis</label>
                         </div>
                     </div>
                 </section>
@@ -425,274 +92,24 @@
                 <!-- Privacy Section -->
                 <section class="settings-section" id="privacy-section">
                     <div class="section-header">
-                        <h2>🔒 Privacy & Security</h2>
-                        <p>Control your data and privacy settings</p>
+                        <h2>Privacy & Security</h2>
+                        <p>Manage your data and privacy settings.</p>
                     </div>
-
-                    <div class="privacy-settings">
-                        <div class="privacy-group">
-                            <h3>Data Collection</h3>
-                            <div class="toggle-item">
-                                <div class="toggle-info">
-                                    <h4>Store Usage History</h4>
-                                    <p>Keep a local history of your AI interactions</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="store-history" checked>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="toggle-item">
-                                <div class="toggle-info">
-                                    <h4>Encrypt Sensitive Data</h4>
-                                    <p>Encrypt API keys and sensitive information</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="encrypt-data" checked>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="toggle-item">
-                                <div class="toggle-info">
-                                    <h4>Anonymize Data</h4>
-                                    <p>Remove personally identifiable information from stored data</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="anonymize-data">
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="privacy-group">
-                            <h3>Data Management</h3>
-                            <div class="action-buttons">
-                                <button id="clear-cache" class="secondary-button">
-                                    <span class="icon">🗑️</span>
-                                    Clear Cache
-                                </button>
-                                <button id="clear-history" class="secondary-button">
-                                    <span class="icon">📝</span>
-                                    Clear History
-                                </button>
-                                <button id="reset-settings" class="danger-button">
-                                    <span class="icon">⚠️</span>
-                                    Reset All Settings
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Bookmarks Section -->
-                <section class="settings-section" id="bookmarks-section">
-                    <div class="section-header">
-                        <h2>🔖 Smart Bookmarks</h2>
-                        <p>Manage your AI-enhanced bookmarks</p>
-                    </div>
-
-                    <div class="bookmarks-controls">
-                        <div class="search-bar">
-                            <input type="text" id="bookmark-search" placeholder="Search bookmarks...">
-                            <button id="search-bookmarks">Search</button>
-                        </div>
-                        <div class="bookmark-actions">
-                            <button id="export-bookmarks" class="secondary-button">Export</button>
-                            <button id="import-bookmarks" class="secondary-button">Import</button>
-                            <input type="file" id="bookmark-file-input" accept=".json,.csv" style="display: none;">
-                        </div>
-                    </div>
-
-                    <div class="bookmarks-list" id="bookmarks-list">
-                        <div class="loading-placeholder">Loading bookmarks...</div>
-                    </div>
-                </section>
-
-                <!-- History Section -->
-                <section class="settings-section" id="history-section">
-                    <div class="section-header">
-                        <h2>📈 Usage History</h2>
-                        <p>View your AI interaction history and analytics</p>
-                    </div>
-
-                    <div class="history-stats">
-                        <div class="stat-card">
-                            <div class="stat-icon">📝</div>
-                            <div class="stat-info">
-                                <div class="stat-value" id="total-summaries">0</div>
-                                <div class="stat-label">Summaries Generated</div>
-                            </div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon">❓</div>
-                            <div class="stat-info">
-                                <div class="stat-value" id="total-questions">0</div>
-                                <div class="stat-label">Questions Answered</div>
-                            </div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon">🌐</div>
-                            <div class="stat-info">
-                                <div class="stat-value" id="total-translations">0</div>
-                                <div class="stat-label">Translations Made</div>
-                            </div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon">📊</div>
-                            <div class="stat-info">
-                                <div class="stat-value" id="total-analyses">0</div>
-                                <div class="stat-label">Content Analyzed</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="history-list" id="history-list">
-                        <div class="loading-placeholder">Loading history...</div>
-                    </div>
-                </section>
-
-                <!-- Storage Section -->
-                <section class="settings-section" id="storage-section">
-                    <div class="section-header">
-                        <h2>💾 Storage Management</h2>
-                        <p>Monitor and manage extension storage usage</p>
-                    </div>
-
-                    <div class="storage-overview">
-                        <div class="storage-stats" id="storage-stats">
-                            <div class="loading-placeholder">Loading storage information...</div>
-                        </div>
-                    </div>
-
-                    <div class="storage-actions">
-                        <button id="backup-data" class="primary-button">
-                            <span class="icon">💾</span>
-                            Create Backup
-                        </button>
-                        <button id="restore-data" class="secondary-button">
-                            <span class="icon">📥</span>
-                            Restore Backup
-                        </button>
-                        <input type="file" id="backup-file-input" accept=".json" style="display: none;">
-                    </div>
-                </section>
-
-                <!-- About Section -->
-                <section class="settings-section" id="about-section">
-                    <div class="section-header">
-                        <h2>ℹ️ About</h2>
-                        <p>Information about GenAI Browser Tool</p>
-                    </div>
-
-                    <div class="about-content">
-                        <div class="app-info">
-                            <div class="app-icon">🤖</div>
-                            <div class="app-details">
-                                <h3>GenAI Browser Tool</h3>
-                                <p class="version">Version 3.0.0</p>
-                                <p class="description">
-                                    An advanced AI-powered browser extension that provides intelligent 
-                                    summarization, Q&A, translation, and content analysis capabilities 
-                                    using multiple AI providers.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="credits">
-                            <h4>Features</h4>
-                            <ul>
-                                <li>✅ Smart content summarization with multiple types and lengths</li>
-                                <li>✅ Interactive Q&A with conversation context</li>
-                                <li>✅ Multi-language translation support</li>
-                                <li>✅ Sentiment analysis and readability scoring</li>
-                                <li>✅ Smart bookmarking with AI-generated tags</li>
-                                <li>✅ Privacy-first design with local processing options</li>
-                                <li>✅ Multiple AI provider support (Chrome AI, OpenAI, Anthropic, Gemini)</li>
-                                <li>✅ Dark/light theme with auto-detection</li>
-                            </ul>
-
-                            <h4>Privacy & Security</h4>
-                            <ul>
-                                <li>🔒 API keys stored locally and encrypted</li>
-                                <li>🔒 Optional local processing with Chrome's built-in AI</li>
-                                <li>🔒 No data shared with third parties</li>
-                                <li>🔒 Open source and transparent</li>
-                            </ul>
-
-                            <h4>License</h4>
-                            <p>This extension is open source under the MIT License.</p>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Help Section -->
-                <section class="settings-section" id="help-section">
-                    <div class="section-header">
-                        <h2>❓ Help & Support</h2>
-                        <p>Get help with using the extension</p>
-                    </div>
-
-                    <div class="help-content">
-                        <div class="help-section">
-                            <h3>🚀 Getting Started</h3>
-                            <div class="help-item">
-                                <h4>1. Choose Your AI Provider</h4>
-                                <p>Select Chrome's built-in AI for free local processing, or configure an external API key for more advanced features.</p>
-                            </div>
-                            <div class="help-item">
-                                <h4>2. Try the Features</h4>
-                                <p>Navigate to any webpage and click the extension icon to start summarizing, asking questions, or translating content.</p>
-                            </div>
-                            <div class="help-item">
-                                <h4>3. Customize Your Experience</h4>
-                                <p>Use these settings to customize features, themes, and privacy preferences to your liking.</p>
-                            </div>
-                        </div>
-
-                        <div class="help-section">
-                            <h3>🔧 Troubleshooting</h3>
-                            <div class="faq-item">
-                                <h4>Extension not working on some pages?</h4>
-                                <p>The extension cannot access chrome:// pages, extension pages, or some restricted sites for security reasons. Try it on regular websites.</p>
-                            </div>
-                            <div class="faq-item">
-                                <h4>API key not working?</h4>
-                                <p>Make sure your API key is correct and has the necessary permissions. Use the "Test" button next to each API key field to verify.</p>
-                            </div>
-                            <div class="faq-item">
-                                <h4>Chrome AI not available?</h4>
-                                <p>Chrome's built-in AI requires Chrome 130+ and may need to be enabled in chrome://flags. It may not be available in all regions yet.</p>
-                            </div>
-                        </div>
-
-                        <div class="help-section">
-                            <h3>⌨️ Keyboard Shortcuts</h3>
-                            <div class="shortcuts-list">
-                                <div class="shortcut-item">
-                                    <kbd>Ctrl+Shift+S</kbd>
-                                    <span>Summarize current page</span>
-                                </div>
-                                <div class="shortcut-item">
-                                    <kbd>Ctrl+Shift+A</kbd>
-                                    <span>Open AI assistant popup</span>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="setting-group">
+                        <button id="reset-settings" class="danger-button">Reset All Settings</button>
                     </div>
                 </section>
             </div>
         </main>
 
-        <!-- Save indicator -->
+        <!-- Save Indicator -->
         <div class="save-indicator" id="save-indicator">
             <span class="icon">✅</span>
             <span class="text">Settings saved</span>
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="options.js"></script>
+    <script type="module" src="options.js"></script>
 </body>
+
 </html>
