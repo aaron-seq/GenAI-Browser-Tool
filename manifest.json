@@ -20,7 +20,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "*://*/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -44,7 +44,7 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*/*"
+        "<all_urls>"
       ],
       "js": [
         "content.js"
@@ -59,7 +59,7 @@
         "offscreen.html"
       ],
       "matches": [
-        "*://*/*"
+        "<all_urls>"
       ]
     }
   ],
@@ -83,5 +83,5 @@
     }
   },
   "incognito": "spanning",
-  "minimum_chrome_version": "130"
+  "minimum_chrome_version": "120"
 }
