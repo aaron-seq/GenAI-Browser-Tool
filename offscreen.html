@@ -1,41 +1,74 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GenAI Offscreen Document</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            display: none; /* Hidden offscreen document */
+/**
+ * @file offscreen.js
+ * @description Script for the offscreen document to handle DOM-related tasks like clipboard access.
+ */
+
+class OffscreenManager {
+    constructor() {
+        this.clipboardTextarea = document.getElementById('clipboard-textarea');
+        this.initialize();
+    }
+
+    initialize() {
+        console.log('Offscreen Document: Initialized.');
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+            this.handleMessage(message)
+                .then(response => sendResponse({
+                    success: true,
+                    data: response
+                }))
+                .catch(error => sendResponse({
+                    success: false,
+                    error: error.message
+                }));
+            return true; // Keep message channel open for async response.
+        });
+    }
+
+    async handleMessage(request) {
+        const {
+            action,
+            data
+        } = request;
+        switch (action) {
+            case 'clipboard-write':
+                return this.writeToClipboard(data.text);
+            case 'clipboard-read':
+                return this.readFromClipboard();
+            default:
+                throw new Error(`Unknown offscreen action: ${action}`);
         }
-        
-        #clipboard-area {
-            position: absolute;
-            left: -9999px;
-            top: -9999px;
-            width: 1px;
-            height: 1px;
-            opacity: 0;
+    }
+
+    async writeToClipboard(text) {
+        try {
+            this.clipboardTextarea.value = text;
+            this.clipboardTextarea.select();
+            document.execCommand('copy');
+            return {
+                status: 'success'
+            };
+        } catch (error) {
+            console.error('Offscreen: Clipboard write failed.', error);
+            throw new Error('Could not write to clipboard.');
+        } finally {
+            this.clipboardTextarea.value = '';
         }
-        
-        #processing-area {
-            width: 100%;
-            height: 100vh;
-            overflow: hidden;
+    }
+
+    async readFromClipboard() {
+        try {
+            this.clipboardTextarea.value = '';
+            this.clipboardTextarea.focus();
+            document.execCommand('paste');
+            return this.clipboardTextarea.value;
+        } catch (error) {
+            console.error('Offscreen: Clipboard read failed.', error);
+            throw new Error('Could not read from clipboard.');
+        } finally {
+            this.clipboardTextarea.value = '';
         }
-    </style>
-</head>
-<body>
-    <!-- Hidden areas for clipboard and processing operations -->
-    <textarea id="clipboard-area" readonly></textarea>
-    <div id="processing-area"></div>
-    
-    <!-- Canvas for image processing -->
-    <canvas id="image-canvas" style="display: none;"></canvas>
-    
-    <!-- Script inclusion -->
-    <script src="offscreen.js"></script>
-</body>
-</html>
+    }
+}
+
+new OffscreenManager();
