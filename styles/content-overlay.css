@@ -1,0 +1,215 @@
+/**
+ * @file styles/content-overlay.css
+ * @description Styles for content script overlays and highlights
+ */
+
+/* GenAI Highlights */
+.genai-highlight {
+  background-color: #ffeb3b !important;
+  color: #000 !important;
+  padding: 2px 4px !important;
+  border-radius: 3px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  transition: all 0.2s ease !important;
+}
+
+.genai-highlight:hover {
+  background-color: #ffc107 !important;
+  transform: scale(1.02) !important;
+}
+
+/* GenAI Floating Panel */
+.genai-floating-panel {
+  position: fixed !important;
+  top: 20px !important;
+  right: 20px !important;
+  width: 300px !important;
+  max-height: 400px !important;
+  background: white !important;
+  border: 1px solid #e0e0e0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  z-index: 999999 !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  overflow: hidden !important;
+}
+
+.genai-panel-header {
+  background: #4f46e5 !important;
+  color: white !important;
+  padding: 12px 16px !important;
+  font-weight: 600 !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.genai-panel-close {
+  background: none !important;
+  border: none !important;
+  color: white !important;
+  font-size: 18px !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  width: 24px !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 4px !important;
+}
+
+.genai-panel-close:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.genai-panel-content {
+  padding: 16px !important;
+  max-height: 320px !important;
+  overflow-y: auto !important;
+}
+
+.genai-loading {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 20px !important;
+  color: #666 !important;
+}
+
+.genai-spinner {
+  width: 20px !important;
+  height: 20px !important;
+  border: 2px solid #e0e0e0 !important;
+  border-top: 2px solid #4f46e5 !important;
+  border-radius: 50% !important;
+  animation: genai-spin 1s linear infinite !important;
+  margin-right: 8px !important;
+}
+
+@keyframes genai-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Selection Menu */
+.genai-selection-menu {
+  position: absolute !important;
+  background: white !important;
+  border: 1px solid #e0e0e0 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  padding: 4px !important;
+  z-index: 999998 !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-size: 13px !important;
+}
+
+.genai-menu-item {
+  display: block !important;
+  width: 100% !important;
+  padding: 8px 12px !important;
+  border: none !important;
+  background: none !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  border-radius: 4px !important;
+  color: #333 !important;
+  white-space: nowrap !important;
+}
+
+.genai-menu-item:hover {
+  background: #f5f5f5 !important;
+  color: #4f46e5 !important;
+}
+
+/* Tooltip */
+.genai-tooltip {
+  position: absolute !important;
+  background: #333 !important;
+  color: white !important;
+  padding: 6px 10px !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  z-index: 999997 !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  transition: opacity 0.2s ease !important;
+}
+
+.genai-tooltip.show {
+  opacity: 1 !important;
+}
+
+.genai-tooltip::after {
+  content: '' !important;
+  position: absolute !important;
+  top: 100% !important;
+  left: 50% !important;
+  margin-left: -5px !important;
+  border-width: 5px !important;
+  border-style: solid !important;
+  border-color: #333 transparent transparent transparent !important;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .genai-floating-panel {
+    background: #1f2937 !important;
+    border-color: #374151 !important;
+    color: #f9fafb !important;
+  }
+  
+  .genai-panel-content {
+    color: #f9fafb !important;
+  }
+  
+  .genai-selection-menu {
+    background: #1f2937 !important;
+    border-color: #374151 !important;
+  }
+  
+  .genai-menu-item {
+    color: #f9fafb !important;
+  }
+  
+  .genai-menu-item:hover {
+    background: #374151 !important;
+  }
+}
+
+/* Animation for panel entrance */
+.genai-floating-panel {
+  animation: genai-slide-in 0.3s ease-out !important;
+}
+
+@keyframes genai-slide-in {
+  from {
+    transform: translateX(100%) !important;
+    opacity: 0 !important;
+  }
+  to {
+    transform: translateX(0) !important;
+    opacity: 1 !important;
+  }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .genai-floating-panel {
+    width: 280px !important;
+    right: 10px !important;
+    top: 10px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .genai-floating-panel {
+    width: calc(100vw - 20px) !important;
+    left: 10px !important;
+    right: 10px !important;
+  }
+}
