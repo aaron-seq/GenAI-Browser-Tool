@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "GenAI Browser Tool - Advanced AI Assistant",
-  "version": "3.0.0",
-  "description": "Advanced AI-powered browser extension with intelligent summarization, Q&A, translation, sentiment analysis, and smart content management.",
+  "name": "GenAI Browser Assistant - Next-Gen AI Tool",
+  "version": "4.0.0",
+  "description": "Advanced AI-powered browser extension with intelligent summarization, Q&A, translation, sentiment analysis, content extraction, and smart productivity features.",
   "permissions": [
     "storage",
     "activeTab",
@@ -12,7 +12,8 @@
     "notifications",
     "clipboardWrite",
     "clipboardRead",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "alarms"
   ],
   "optional_permissions": [
     "bookmarks",
@@ -43,12 +44,9 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
+      "matches": ["<all_urls>"],
+      "js": ["content-scripts/content-main.js"],
+      "css": ["styles/content-overlay.css"],
       "run_at": "document_end"
     }
   ],
@@ -56,15 +54,15 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "offscreen.html"
+        "offscreen.html",
+        "styles/*",
+        "assets/*"
       ],
-      "matches": [
-        "<all_urls>"
-      ]
+      "matches": ["<all_urls>"]
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://*.openai.com https://*.anthropic.com https://*.googleapis.com https://api.gemini.google.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://*.openai.com https://*.anthropic.com https://*.googleapis.com https://api.gemini.google.com https://api.cohere.ai https://api.huggingface.co;"
   },
   "commands": {
     "summarize_page": {
@@ -80,8 +78,15 @@
         "mac": "Command+Shift+A"
       },
       "description": "Toggle AI assistant popup"
+    },
+    "quick_question": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Q",
+        "mac": "Command+Shift+Q"
+      },
+      "description": "Quick question about page"
     }
   },
   "incognito": "spanning",
-  "minimum_chrome_version": "120"
+  "minimum_chrome_version": "121"
 }
