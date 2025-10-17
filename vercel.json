@@ -1,0 +1,52 @@
+{
+  "version": 2,
+  "name": "genai-browser-tool",
+  "builds": [
+    {
+      "src": "web/**/*",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/web/index.html"
+    },
+    {
+      "src": "/demo",
+      "dest": "/web/demo.html"
+    },
+    {
+      "src": "/assets/(.*)",
+      "dest": "/web/assets/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/web/$1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ],
+  "functions": {
+    "web/api/**/*.js": {
+      "runtime": "nodejs18.x"
+    }
+  }
+}
