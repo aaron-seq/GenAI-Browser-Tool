@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: genai-browser-tool
+    env: node
+    plan: free
+    buildCommand: npm run build:web
+    startCommand: npm run serve
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+    healthCheckPath: /health
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - web/**
+        - package.json
+        - package-lock.json
+      ignoredPaths:
+        - src/**
+        - tests/**
+        - README.md
