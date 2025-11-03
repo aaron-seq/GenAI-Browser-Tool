@@ -29,7 +29,7 @@
   ],
   
   "background": {
-    "service_worker": "src/background/background-service.js",
+    "service_worker": "background.js",
     "type": "module"
   },
   
@@ -42,14 +42,14 @@
         "moz-extension://*/*",
         "edge://*/*"
       ],
-      "js": ["src/content/content-manager.js"],
-      "css": ["src/styles/content-styles.css"],
+      "js": ["content.js"],
+      "css": ["popup.css"],
       "run_at": "document_end"
     }
   ],
   
   "action": {
-    "default_popup": "src/popup/popup.html",
+    "default_popup": "popup.html",
     "default_title": "GenAI Browser Tool",
     "default_icon": {
       "16": "assets/icons/icon-16.png",
@@ -66,22 +66,28 @@
     "128": "assets/icons/icon-128.png"
   },
   
-  "options_page": "src/pages/options.html",
+  "options_page": "options.html",
+  
+  "offscreen": {
+    "url": "offscreen.html",
+    "reasons": ["DOM_PARSER"],
+    "justification": "Parse DOM content for AI processing"
+  },
   
   "web_accessible_resources": [
     {
       "resources": [
-        "src/ui/*",
         "assets/*",
-        "src/styles/*",
-        "src/popup/*"
+        "popup.css",
+        "options.css",
+        "*.js.map"
       ],
       "matches": ["<all_urls>"]
     }
   ],
   
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://api.cohere.ai https://api.huggingface.co; img-src 'self' data: https:;"
   },
   
   "commands": {
