@@ -8,7 +8,7 @@ An advanced browser extension using the latest in Generative AI to **summarize w
 
 ---
 
-## ⚡️ Highlights
+##  Highlights
 
 - **One-Click Summaries:** Instantly create concise, structured, or headline-style summaries of any webpage.
 - **Interactive Q&A:** Ask natural language questions about a page's content with deep semantic understanding.
@@ -22,7 +22,7 @@ An advanced browser extension using the latest in Generative AI to **summarize w
 - **Privacy-First:** All data processed locally whenever possible, API keys encrypted, zero tracking.
 - **Open Source:** Fork, extend, and contribute via [GitHub](https://github.com/aaronseq12/GenAI-Browser-Tool).
 
-## 🎁 Advanced Features
+##  Advanced Features
 
 - **Multi-Provider AI**: Automatic fallback across Chrome AI, OpenAI, Anthropic, Gemini for best performance and privacy.
 - **Conversational Q&A**: Natural multi-turn dialog about pages, with context memory.
@@ -30,7 +30,7 @@ An advanced browser extension using the latest in Generative AI to **summarize w
 - **Data Export/Import**: Save results in JSON, CSV, Markdown. Backup and restore your data.
 - **Utility Actions**: Context menu shortcuts ("Summarize this", "Explain", "Extract insights"), quick hotkeys.
 
-## 🛠️ Installation
+##  Installation
 
 1. **Clone the repository**
    ```
@@ -45,14 +45,14 @@ An advanced browser extension using the latest in Generative AI to **summarize w
 5. **Configure** (optional)
    - Click the extension icon, open Settings ⚙️, select or add your preferred AI provider or API key.
 
-## 🚦 Running the Extension
+##  Running the Extension
 
 1. Navigate to any webpage.
 2. Click the Gen-AI Browser Summary Tool icon in your browser's toolbar.
 3. Explore the Summary, Q&A, Translate, Analyze, and Tools tabs.
 4. Access right-click (context menu) shortcuts for text selection actions.
 
-## 📝 Contributing
+##  Contributing
 
 We welcome all contributions! Open an issue, submit a pull request, or contribute translations or new features.
 
@@ -60,6 +60,6 @@ We welcome all contributions! Open an issue, submit a pull request, or contribut
 - **Feature Requests:** Use the issues or discussions tab.
 - **Code Contributions:** Ensure clean commits, follow the modular file structure, and update documentation.
 
-## 📄 License
+##  License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
