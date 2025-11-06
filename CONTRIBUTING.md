@@ -1,350 +1,297 @@
 # Contributing to GenAI Browser Tool
 
-Thank you for your interest in contributing to the GenAI Browser Tool project. This document provides comprehensive guidelines for contributing to ensure high-quality, maintainable code and a positive collaborative environment.
+<div align="center">
 
-## Development Environment Setup
+![Contributors Welcome](https://img.shields.io/badge/contributors-welcome-brightgreen.svg)
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+![Good First Issue](https://img.shields.io/badge/-good%20first%20issue-blueviolet)
+
+[Quick Start](#quick-start) • [Dev Setup](#development-setup) • [Commit Rules](#commit-guidelines) • [Code Style](#code-style-guidelines) • [Testing](#testing-requirements) • [PR Process](#pull-request-workflow)
+
+</div>
+
+## Table of Contents
+
+<details>
+<summary>Expand</summary>
+
+- [Quick Start](#quick-start)
+- [Development Setup](#development-setup)
+- [Project Structure](#project-structure)
+- [Branching Model](#branching-model)
+- [Commit Guidelines](#commit-guidelines)
+- [Code Style Guidelines](#code-style-guidelines)
+- [Security & Privacy](#security--privacy)
+- [Testing Requirements](#testing-requirements)
+- [Pull Request Workflow](#pull-request-workflow)
+- [Review Process](#review-process)
+- [Release Process](#release-process)
+- [Issue Triage](#issue-triage)
+- [Community Expectations](#community-expectations)
+
+</details>
+
+## Quick Start
+
+1. Fork the repo and create your branch from `main`:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/GenAI-Browser-Tool
+   cd GenAI-Browser-Tool
+   git checkout -b feature/awesome-change
+   ```
+2. Install dependencies and prepare hooks:
+   ```bash
+   npm ci
+   npm run prepare
+   ```
+3. Run in development mode:
+   ```bash
+   npm run dev:extension
+   ```
+4. Load the unpacked extension from the project root at `chrome://extensions`.
+5. Write tests and ensure all checks pass (see below), then open a PR.
+
+## Development Setup
 
 ### Prerequisites
+- Node.js >= 18, npm >= 9
+- Chrome/Edge >= 88 (for MV3), Firefox (limited MV3)
+- Git, VS Code (recommended)
 
-- **Node.js**: Version 18.0.0 or higher
-- **npm**: Version 9.0.0 or higher
-- **Git**: Latest stable version
-- **Chrome/Edge**: For extension testing (Version 88+)
-
-### Initial Setup
-
-1. **Fork and Clone**
-   ```bash
-   git clone https://github.com/[your-username]/GenAI-Browser-Tool.git
-   cd GenAI-Browser-Tool
-   ```
-
-2. **Install Dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Environment Configuration**
-   ```bash
-   cp .env.example .env
-   # Configure your API keys and settings
-   ```
-
-4. **Build Extension**
-   ```bash
-   npm run build:extension
-   ```
-
-5. **Load Extension in Browser**
-   - Open Chrome/Edge and navigate to `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked" and select the project directory
-
-## Development Workflow
-
-### Branch Naming Conventions
-
-- **Feature branches**: `feature/description-of-feature`
-- **Bug fixes**: `fix/description-of-bug`
-- **Documentation**: `docs/description-of-changes`
-- **Refactoring**: `refactor/description-of-refactor`
-- **Testing**: `test/description-of-test-changes`
-
-### Commit Message Guidelines
-
-Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
-
-```
-type(scope): description
-
-[optional body]
-
-[optional footer]
+### Environment configuration
+```bash
+cp .env.example .env
+# Configure provider keys as needed (also configurable in Options UI)
 ```
 
-**Types**:
-- `feat`: New feature implementation
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, missing semicolons, etc.)
-- `refactor`: Code refactoring without functional changes
-- `perf`: Performance improvements
-- `test`: Adding or updating tests
-- `chore`: Build process or auxiliary tool changes
-
-**Examples**:
-```
-feat(ai-providers): add Claude 3.5 Sonnet support
-fix(content-extraction): handle edge cases in DOM parsing
-docs(contributing): update development setup instructions
+### Common scripts
+```bash
+npm run dev:extension   # Watch build for extension
+npm run build:extension # Production build (Rollup MV3 bundle)
+npm run test            # Unit tests (Vitest)
+npm run test:e2e        # Playwright E2E
+npm run lint            # ESLint + security rules
+npm run typecheck       # TypeScript type checks
+npm run format          # Prettier formatting
 ```
 
-## Code Quality Standards
-
-### JavaScript/TypeScript Guidelines
-
-1. **ESLint Configuration**: Follow the existing `.eslintrc.json` rules
-2. **Prettier Formatting**: Code must pass `npm run format`
-3. **Type Safety**: Use TypeScript interfaces and proper typing
-4. **Error Handling**: Implement comprehensive error handling with try-catch blocks
-5. **Security**: Validate all user inputs and sanitize data
-
-### Code Style Requirements
-
-```javascript
-// Use modern ES6+ syntax
-const processContent = async (content) => {
-  try {
-    const result = await aiProvider.process(content);
-    return { success: true, data: result };
-  } catch (error) {
-    logger.error('Content processing failed', error);
-    throw new ProcessingError('Failed to process content', error);
-  }
-};
-
-// Proper JSDoc documentation
-/**
- * Processes content using AI provider
- * @param {string} content - The content to process
- * @returns {Promise<ProcessingResult>} Processing result
- * @throws {ProcessingError} When processing fails
- */
-```
-
-### File Structure Guidelines
+## Project Structure
 
 ```
-src/
-├── background/          # Service worker files
-├── content/            # Content scripts
-├── popup/              # Extension popup interface
-├── options/            # Settings and configuration
-├── core/               # Core functionality modules
-├── services/           # Service classes
-├── utils/              # Utility functions
-├── providers/          # AI provider implementations
-├── styles/             # CSS and styling
-└── tests/              # Test files
+GenAI-Browser-Tool/
+├── background.js          # MV3 service worker
+├── content.js             # content script injected in pages
+├── popup.html/css/js      # popup UI
+├── options.html/css/js    # settings UI
+├── core/                  # core orchestration
+│   ├── ai-provider-orchestrator.js
+│   └── configuration-manager.js
+├── providers/             # AI provider adapters
+│   ├── openai-provider.js
+│   ├── claude-provider.js         (add as needed)
+│   ├── gemini-provider.js         (add as needed)
+│   └── chrome-ai-provider.js      (add as needed)
+├── services/              # utilities: cache, security, extractors
+├── utils/                 # helpers
+├── tests/                 # unit/e2e tests
+├── docs/                  # additional docs
+└── manifest.json          # MV3 manifest
 ```
+
+## Branching Model
+
+We use a simplified Git Flow tailored for extensions:
+
+```mermaid
+gitGraph
+    commit id:"seed"
+    branch develop
+    checkout develop
+    commit id:"work"
+    branch feature/provider-fallback
+    checkout feature/provider-fallback
+    commit id:"impl"
+    commit id:"tests"
+    checkout develop
+    merge feature/provider-fallback
+    checkout main
+    merge develop
+    commit id:"release v4.1.1"
+```
+
+- `main`: stable, released code (protected)
+- `develop`: integration branch for next release
+- `feature/*`, `fix/*`, `docs/*`, `chore/*` short‑lived branches
+
+## Commit Guidelines
+
+Follow Conventional Commits. Examples:
+
+```
+feat(provider): add Gemini fallback when OpenAI is rate-limited
+fix(content): sanitize HTML before summarization to avoid XSS
+perf(cache): memoize provider health checks
+docs(readme): add manual install steps for Firefox
+chore(ci): add CodeQL security scan
+```
+
+Rules:
+- Imperative mood, max 50 chars subject, no trailing period
+- Optional body wraps at 72 cols; explain motivation, approach, tradeoffs
+- Reference issues: `Closes #123`, `Refs #456`
+- Breaking changes in footer: `BREAKING CHANGE: ...`
+
+## Code Style Guidelines
+
+### JavaScript/TypeScript
+- Use TypeScript types in new/changed files when possible
+- Prefer pure functions, avoid side effects in providers/services
+- Strict input validation (zod/validators) and output typing
+- No direct DOM injection; sanitize with DOMPurify before rendering
+- Avoid long functions (>40 lines). Extract helpers.
+
+Example patterns:
+```ts
+// Typed provider request
+export interface AIRequest { kind: 'summary'|'qa'|'translate'|'analyze'; text: string; locale?: string; }
+export interface AIResponse { content: string; tokens?: number; latencyMs?: number; sources?: string[] }
+
+export async function summarize(req: AIRequest): Promise<AIResponse> {
+  if (req.kind !== 'summary') throw new Error('invalid kind');
+  // ... impl
+  return { content: result.text, tokens: result.usage?.total_tokens };
+}
+```
+
+### UI/UX
+- Keep popup UI responsive and accessible (ARIA labels, tab order)
+- Respect prefers-color-scheme; ensure contrast and keyboard navigation
+- No blocking operations on UI thread; use async boundaries and spinners
+
+### Security & Privacy
+- Do not log API keys or user content
+- Use `chrome.storage.sync/local` with minimal retention; encrypt secrets
+- Enforce CSP in manifest; never eval or inline scripts
+- Strip PII before sending to external APIs where feasible
+
+## Security & Privacy
+
+All contributions must comply with:
+- Manifest V3 policies (no remote code, background service worker)
+- Chrome Web Store / Edge Add-ons policies
+- Minimum-permission principle
+
+Checklist before PR:
+- [ ] No secrets in code or history
+- [ ] Inputs validated and sanitized
+- [ ] External requests over HTTPS with proper hosts
+- [ ] Respect user opt-outs and incognito isolation
 
 ## Testing Requirements
 
-### Unit Tests
+Coverage targets (guideline, not hard fail):
+- Unit: ≥ 80% lines on changed modules
+- E2E: happy paths for popup, summary, Q&A, translate
 
-- Write tests for all new functionality using Vitest
-- Maintain minimum 80% code coverage
-- Test both success and failure scenarios
+Examples:
+```ts
+// Vitest unit example
+import { describe, it, expect } from 'vitest';
+import { sanitize } from '@/services/security-manager';
 
-```javascript
-// Example test structure
-import { describe, it, expect, vi } from 'vitest';
-import { ContentProcessor } from '../src/services/content-processor.js';
-
-describe('ContentProcessor', () => {
-  it('should process content successfully', async () => {
-    const processor = new ContentProcessor();
-    const result = await processor.process('test content');
-    
-    expect(result.success).toBe(true);
-    expect(result.data).toBeDefined();
-  });
-
-  it('should handle processing errors gracefully', async () => {
-    const processor = new ContentProcessor();
-    vi.spyOn(processor, 'callAI').mockRejectedValue(new Error('API Error'));
-    
-    await expect(processor.process('test')).rejects.toThrow('Processing failed');
+describe('security', () => {
+  it('removes scripts from HTML', () => {
+    expect(sanitize('<img src=x onerror=alert(1)>')).not.toMatch(/onerror/);
   });
 });
 ```
 
-### End-to-End Tests
+```ts
+// Playwright e2e snippet
+import { test, expect } from '@playwright/test';
 
-- Use Playwright for browser extension testing
-- Test critical user workflows
-- Verify extension functionality across Chrome and Edge
-
-### Running Tests
-
-```bash
-# Unit tests
-npm test
-
-# E2E tests
-npm run test:e2e
-
-# Coverage report
-npm run test:coverage
-```
-
-## Security Guidelines
-
-### Input Validation
-
-```javascript
-import { z } from 'zod';
-import DOMPurify from 'dompurify';
-
-// Schema validation
-const UserInputSchema = z.object({
-  content: z.string().min(1).max(10000),
-  type: z.enum(['summarize', 'translate', 'analyze'])
+test('popup opens and summarizes page', async ({ page }) => {
+  await page.goto('https://example.com');
+  // open extension UI per your test harness
+  await expect(page.locator('.genai-popup')).toBeVisible();
+  await page.click('#summarize');
+  await expect(page.locator('.summary-result')).toHaveText(/summary/i, { timeout: 10000 });
 });
-
-// Sanitization
-const sanitizeHtml = (html) => {
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ['p', 'br', 'strong', 'em'],
-    ALLOWED_ATTR: []
-  });
-};
 ```
 
-### API Key Management
+CI checks must pass: lint, typecheck, unit, e2e (where configured).
 
-- Never commit API keys to version control
-- Use Chrome storage API for secure key storage
-- Implement key rotation mechanisms
-- Validate API responses before processing
+## Pull Request Workflow
 
-## Pull Request Process
+Pre‑flight:
+- [ ] Lint, typecheck, tests pass locally
+- [ ] Updated README/docs for user‑facing changes
+- [ ] Added/updated tests
+- [ ] No bundle bloat (verify `dist/` size delta)
 
-### Before Submitting
-
-1. **Code Quality Checks**
-   ```bash
-   npm run lint
-   npm run format
-   npm run typecheck
-   npm test
-   ```
-
-2. **Manual Testing**
-   - Test extension functionality in Chrome/Edge
-   - Verify all features work as expected
-   - Test error scenarios and edge cases
-
-3. **Documentation Updates**
-   - Update README.md if adding new features
-   - Add JSDoc comments for new functions
-   - Update CHANGELOG.md with your changes
-
-### Pull Request Template
-
+PR Description Template:
 ```markdown
-## Description
-Brief description of changes made
+## Summary
+What changed and why.
 
-## Type of Change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation update
+## Changes
+- ...
 
-## Testing
-- [ ] Unit tests pass
-- [ ] E2E tests pass
-- [ ] Manual testing completed
-- [ ] Cross-browser compatibility verified
+## Tests
+- Unit:
+- E2E:
 
 ## Screenshots
-[Include screenshots for UI changes]
+(If UI changed)
 
-## Checklist
-- [ ] Code follows project style guidelines
-- [ ] Self-review completed
-- [ ] Documentation updated
-- [ ] Tests added/updated
-- [ ] No breaking changes (or breaking changes documented)
+## Risks & Rollback
+Potential impact and how to revert.
+
+## Related
+Closes #123, Refs #456
 ```
 
-### Review Process
+Labels:
+- `bug`, `enhancement`, `documentation`, `dependencies`, `security`, `breaking change`, `good first issue`
 
-1. **Automated Checks**: All CI checks must pass
-2. **Code Review**: At least one maintainer review required
-3. **Testing**: Reviewer will test functionality
-4. **Approval**: Changes approved by maintainer
-5. **Merge**: Squash and merge to main branch
+## Review Process
+
+For reviewers:
+- Focus on correctness, security, privacy, and maintainability
+- Suggest concrete improvements; prefer questions over directives
+- Approve if concerns are addressed even if further polish is possible
+
+For authors:
+- Respond to all comments
+- Keep commits clean (squash before merge unless history is valuable)
+- Provide benchmarks when touching performance‑critical paths
 
 ## Release Process
 
-### Version Numbering
+We use SemVer and align `manifest.json` version with `package.json`.
 
-We follow [Semantic Versioning](https://semver.org/):
-- **MAJOR**: Breaking changes
-- **MINOR**: New features (backward compatible)
-- **PATCH**: Bug fixes (backward compatible)
+Steps:
+1. Update versions: `npm version patch|minor|major`
+2. Update CHANGELOG.md
+3. Build and smoke test: `npm run build:extension`
+4. Tag and push: `git push --follow-tags`
+5. Create GitHub release
+6. Submit to Chrome Web Store / Edge Add‑ons
 
-### Release Checklist
+## Issue Triage
 
-1. Update version in `package.json` and `manifest.json`
-2. Update `CHANGELOG.md` with release notes
-3. Create release branch: `release/v[version]`
-4. Run full test suite
-5. Create GitHub release with changelog
-6. Deploy to Chrome Web Store (maintainers only)
+Triage labels we use:
+- `needs repro`, `blocked`, `security`, `performance`, `help wanted`, `good first issue`
 
-## Getting Help
+When filing a bug, include:
+- Repro steps, expected vs actual, console logs (redacted), browser version, OS, extension version.
 
-### Communication Channels
+## Community Expectations
 
-- **Issues**: Use GitHub Issues for bug reports and feature requests
-- **Discussions**: Use GitHub Discussions for questions and ideas
-- **Email**: Contact maintainers directly for security issues
+- Be kind, be specific, be constructive.
+- Follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+- Respect privacy and ethical AI usage in proposals and code.
 
-### Issue Templates
+---
 
-When creating issues, use the appropriate template:
-- **Bug Report**: Include steps to reproduce, expected behavior, and environment details
-- **Feature Request**: Describe the problem and proposed solution
-- **Documentation**: Specify what documentation needs improvement
-
-### Code of Conduct
-
-This project follows the [Contributor Covenant Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). Please read and follow these guidelines to ensure a welcoming environment for all contributors.
-
-## Performance Guidelines
-
-### Extension Performance
-
-- Minimize memory usage in content scripts
-- Use efficient DOM manipulation techniques
-- Implement proper cleanup in service workers
-- Optimize API calls with caching and debouncing
-
-### AI Provider Integration
-
-- Implement proper error handling and retries
-- Use streaming responses for large content
-- Cache frequently requested content
-- Implement rate limiting to prevent API abuse
-
-## Deployment Guidelines
-
-### Environment Configuration
-
-```javascript
-// config/environments.js
-export const environments = {
-  development: {
-    apiTimeout: 10000,
-    logLevel: 'debug',
-    enableAnalytics: false
-  },
-  production: {
-    apiTimeout: 5000,
-    logLevel: 'error',
-    enableAnalytics: true
-  }
-};
-```
-
-### Build Optimization
-
-- Minimize bundle size using tree shaking
-- Optimize images and assets
-- Use compression for production builds
-- Implement proper source maps for debugging
-
-Thank you for contributing to GenAI Browser Tool. Your contributions help make this project better for everyone.
+Thank you for contributing to GenAI Browser Tool. Your improvements help thousands browse smarter and safer.
