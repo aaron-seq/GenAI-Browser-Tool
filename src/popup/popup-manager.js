@@ -120,7 +120,7 @@ export class PopupManager {
   /**
    * Handle page summarization with multiple summary types
    */
-  async handlePageSummarization(event) {
+  async handlePageSummarization(_event) {
     const operationId = 'page-summarization';
     
     if (this.activeOperations.has(operationId)) {
@@ -162,7 +162,7 @@ export class PopupManager {
   /**
    * Handle question submission with conversation context
    */
-  async handleQuestionSubmission(event) {
+  async handleQuestionSubmission(_event) {
     const questionInput = document.getElementById('question-input');
     const userQuestion = questionInput.value.trim();
 
@@ -218,7 +218,7 @@ export class PopupManager {
   /**
    * Handle content translation with language detection
    */
-  async handleContentTranslation(event) {
+  async handleContentTranslation(_event) {
     const operationId = 'content-translation';
     
     try {

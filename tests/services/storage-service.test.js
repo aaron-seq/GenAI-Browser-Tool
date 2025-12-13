@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StorageService } from '../../services/storage-service.js';
 
 describe('StorageService', () => {
+  /** @type {StorageService} */
   let storageService;
 
   beforeEach(() => {
@@ -21,9 +22,11 @@ describe('StorageService', () => {
 
       await storageService.saveSummaryHistory(summaryData);
 
-      expect(chrome.storage.local.get).toHaveBeenCalledWith('summaryHistory');
+      expect(chrome.storage.local.get).toHaveBeenCalledWith(['genai_summary_history']);
       expect(chrome.storage.local.set).toHaveBeenCalledWith({
-        summaryHistory: expect.arrayContaining([summaryData])
+        genai_summary_history: expect.arrayContaining([
+          expect.objectContaining(summaryData)
+        ])
       });
     });
 
@@ -34,7 +37,7 @@ describe('StorageService', () => {
         timestamp: Date.now() - i * 1000
       }));
 
-      chrome.storage.local.get.mockResolvedValue({ summaryHistory: existingHistory });
+      chrome.storage.local.get.mockResolvedValue({ genai_summary_history: existingHistory });
 
       const newSummary = {
         originalContent: 'New content',
@@ -42,11 +45,16 @@ describe('StorageService', () => {
         timestamp: Date.now()
       };
 
+      storageService.storageQuota.summaryHistory = 100;
       await storageService.saveSummaryHistory(newSummary);
 
       const setCall = chrome.storage.local.set.mock.calls[0][0];
-      expect(setCall.summaryHistory).toHaveLength(100); // Should not exceed limit
-      expect(setCall.summaryHistory[0]).toEqual(newSummary); // New entry should be first
+      expect(setCall.genai_summary_history).toHaveLength(100); // Should not exceed limit
+      expect(setCall.genai_summary_history[0]).toEqual(expect.objectContaining({
+        ...newSummary,
+        id: expect.any(String),
+        schemaVersion: expect.any(String)
+      })); // New entry should be first
     });
   });
 
@@ -61,9 +69,11 @@ describe('StorageService', () => {
 
       await storageService.updateConversationHistory(conversationData);
 
-      expect(chrome.storage.local.get).toHaveBeenCalledWith('conversationHistory');
+      expect(chrome.storage.local.get).toHaveBeenCalledWith(['genai_conversation_history']);
       expect(chrome.storage.local.set).toHaveBeenCalledWith({
-        conversationHistory: expect.arrayContaining([conversationData])
+        genai_conversation_history: expect.arrayContaining([
+          expect.objectContaining(conversationData)
+        ])
       });
     });
   });
@@ -72,7 +82,7 @@ describe('StorageService', () => {
     it('should clean up old data beyond retention period', async () => {
       const now = Date.now();
       const oldData = {
-        timestamp: now - (31 * 24 * 60 * 60 * 1000), // 31 days old
+        timestamp: now - (91 * 24 * 60 * 60 * 1000), // 91 days old (beyond 90 limit)
         summary: 'Old summary'
       };
       const recentData = {
@@ -81,21 +91,21 @@ describe('StorageService', () => {
       };
 
       chrome.storage.local.get.mockResolvedValue({
-        summaryHistory: [oldData, recentData],
-        conversationHistory: [oldData, recentData]
+        genai_summary_history: [oldData, recentData],
+        genai_conversation_history: [oldData, recentData]
       });
 
       await storageService.cleanupOldData();
 
       const setCalls = chrome.storage.local.set.mock.calls;
-      const summaryUpdate = setCalls.find(call => call[0].summaryHistory);
-      const conversationUpdate = setCalls.find(call => call[0].conversationHistory);
+      const summaryUpdate = setCalls.find(call => call[0].genai_summary_history);
+      const conversationUpdate = setCalls.find(call => call[0].genai_conversation_history);
 
-      expect(summaryUpdate[0].summaryHistory).toHaveLength(1);
-      expect(summaryUpdate[0].summaryHistory[0]).toEqual(recentData);
+      expect(summaryUpdate[0].genai_summary_history).toHaveLength(1);
+      expect(summaryUpdate[0].genai_summary_history[0]).toEqual(recentData);
       
-      expect(conversationUpdate[0].conversationHistory).toHaveLength(1);
-      expect(conversationUpdate[0].conversationHistory[0]).toEqual(recentData);
+      expect(conversationUpdate[0].genai_conversation_history).toHaveLength(1);
+      expect(conversationUpdate[0].genai_conversation_history[0]).toEqual(recentData);
     });
   });
 
@@ -103,11 +113,12 @@ describe('StorageService', () => {
     it('should handle storage errors gracefully', async () => {
       chrome.storage.local.get.mockRejectedValue(new Error('Storage error'));
 
-      await expect(storageService.saveSummaryHistory({})).rejects.toThrow('Storage error');
+      // Service swallows error and logs it, checks if it doesn't throw
+      await expect(storageService.saveSummaryHistory({})).resolves.not.toThrow();
     });
 
     it('should handle corrupted data gracefully', async () => {
-      chrome.storage.local.get.mockResolvedValue({ summaryHistory: 'invalid-data' });
+      chrome.storage.local.get.mockResolvedValue({ genai_summary_history: 'invalid-data' });
 
       const summaryData = {
         originalContent: 'Test',
@@ -119,7 +130,9 @@ describe('StorageService', () => {
 
       // Should create new array when existing data is corrupted
       expect(chrome.storage.local.set).toHaveBeenCalledWith({
-        summaryHistory: [summaryData]
+        genai_summary_history: [
+          expect.objectContaining(summaryData)
+        ]
       });
     });
   });

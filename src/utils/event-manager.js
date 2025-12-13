@@ -206,7 +206,7 @@ export class EventManager {
       listenersBySelector: new Map()
     };
 
-    for (const [id, info] of this.activeListeners) {
+    for (const [, info] of this.activeListeners) {
       // Count by event type
       const typeCount = summary.listenersByType.get(info.eventType) || 0;
       summary.listenersByType.set(info.eventType, typeCount + 1);

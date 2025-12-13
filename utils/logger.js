@@ -9,24 +9,40 @@ export class Logger {
     this.logLevel = 'info'; // debug, info, warn, error
   }
 
+  /**
+   * @param {string} message
+   * @param {any} [data=null]
+   */
   debug(message, data = null) {
     if (this.shouldLog('debug')) {
       console.debug(`[${this.context}] ${message}`, data || '');
     }
   }
 
+  /**
+   * @param {string} message
+   * @param {any} [data=null]
+   */
   info(message, data = null) {
     if (this.shouldLog('info')) {
       console.info(`[${this.context}] ${message}`, data || '');
     }
   }
 
+  /**
+   * @param {string} message
+   * @param {any} [data=null]
+   */
   warn(message, data = null) {
     if (this.shouldLog('warn')) {
       console.warn(`[${this.context}] ${message}`, data || '');
     }
   }
 
+  /**
+   * @param {string} message
+   * @param {any} [data=null]
+   */
   error(message, data = null) {
     if (this.shouldLog('error')) {
       console.error(`[${this.context}] ${message}`, data || '');

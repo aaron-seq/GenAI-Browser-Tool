@@ -64,7 +64,7 @@ export default [
   // Popup script
   {
     ...baseConfig,
-    input: 'popup.js',
+    input: 'scripts/popup-main.js',
     output: {
       file: 'dist/popup.js',
       format: 'iife',

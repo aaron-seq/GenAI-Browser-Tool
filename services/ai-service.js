@@ -11,10 +11,10 @@ class BaseAIProvider {
     this.name = name;
   }
   async isAvailable() { throw new Error("isAvailable() must be implemented by subclasses"); }
-  async summarize(text, options) { throw new Error("summarize() must be implemented by subclasses"); }
-  async askQuestion(question, options) { throw new Error("askQuestion() must be implemented by subclasses"); }
-  async translate(text, options) { throw new Error("translate() must be implemented by subclasses"); }
-  async analyzeSentiment(text, options) { throw new Error("analyzeSentiment() must be implemented by subclasses"); }
+  async summarize(_text, _options) { throw new Error("summarize() must be implemented by subclasses"); }
+  async askQuestion(_question, _options) { throw new Error("askQuestion() must be implemented by subclasses"); }
+  async translate(_text, _options) { throw new Error("translate() must be implemented by subclasses"); }
+  async analyzeSentiment(_text, _options) { throw new Error("analyzeSentiment() must be implemented by subclasses"); }
 }
 
 

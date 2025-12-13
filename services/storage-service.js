@@ -11,14 +11,27 @@ export class StorageService {
       bookmarks: 2000,
       userPreferences: 1
     };
+
+    this.keys = {
+      SUMMARY_HISTORY: 'genai_summary_history',
+      CONVERSATION_HISTORY: 'genai_conversation_history',
+      BOOKMARKS: 'genai_smart_bookmarks',
+      USER_PREFERENCES: 'genai_user_preferences'
+    };
     
     this.dataSchemaVersion = '4.0.0';
   }
 
+  /**
+   * @param {any} summaryData
+   */
   async saveSummaryHistory(summaryData) {
-    const storageKey = 'genai_summary_history';
-    const existingData = await this.getStorageData(storageKey, []);
+    let existingData = await this.getStorageData(this.keys.SUMMARY_HISTORY, []);
     
+    if (!Array.isArray(existingData)) {
+      existingData = [];
+    }
+
     const enhancedSummaryData = {
       id: this.generateUniqueId(),
       ...summaryData,
@@ -32,10 +45,13 @@ export class StorageService {
       existingData.splice(this.storageQuota.summaryHistory);
     }
     
-    await this.setStorageData(storageKey, existingData);
+    await this.setStorageData(this.keys.SUMMARY_HISTORY, existingData);
     return enhancedSummaryData.id;
   }
 
+  /**
+   * @param {any} conversationData
+   */
   async updateConversationHistory(conversationData) {
     const storageKey = 'genai_conversation_history';
     const existingData = await this.getStorageData(storageKey, []);
@@ -57,6 +73,9 @@ export class StorageService {
     return enhancedConversationData.id;
   }
 
+  /**
+   * @param {any} bookmarkData
+   */
   async saveIntelligentBookmark(bookmarkData) {
     const storageKey = 'genai_smart_bookmarks';
     const existingBookmarks = await this.getStorageData(storageKey, []);
@@ -72,7 +91,7 @@ export class StorageService {
     
     // Check for duplicates
     const existingIndex = existingBookmarks.findIndex(
-      bookmark => bookmark.url === bookmarkData.url
+      (/** @type {any} */ bookmark) => bookmark.url === bookmarkData.url
     );
     
     if (existingIndex >= 0) {
@@ -117,6 +136,9 @@ export class StorageService {
     return await this.getStorageData('genai_user_preferences', defaultPreferences);
   }
 
+  /**
+   * @param {any} newPreferences
+   */
   async updateUserPreferences(newPreferences) {
     const currentPreferences = await this.getUserPreferences();
     const updatedPreferences = {
@@ -150,22 +172,23 @@ export class StorageService {
     
     // Cleanup old summaries
     const summaryHistory = await this.getStorageData('genai_summary_history', []);
-    const filteredSummaries = summaryHistory.filter(item => item.timestamp > cutoffDate);
+    const filteredSummaries = summaryHistory.filter((/** @type {any} */ item) => item.timestamp > cutoffDate);
     await this.setStorageData('genai_summary_history', filteredSummaries);
     
     // Cleanup old conversations
     const conversationHistory = await this.getStorageData('genai_conversation_history', []);
-    const filteredConversations = conversationHistory.filter(item => item.timestamp > cutoffDate);
+    const filteredConversations = conversationHistory.filter((/** @type {any} */ item) => item.timestamp > cutoffDate);
     await this.setStorageData('genai_conversation_history', filteredConversations);
     
     // Cleanup unused bookmarks (not accessed in 180 days)
     const longCutoffDate = Date.now() - (180 * 24 * 60 * 60 * 1000);
     const bookmarks = await this.getStorageData('genai_smart_bookmarks', []);
-    const activeBookmarks = bookmarks.filter(bookmark => 
+    const activeBookmarks = bookmarks.filter((/** @type {any} */ bookmark) => 
       bookmark.lastAccessed > longCutoffDate || bookmark.accessCount > 5
     );
     await this.setStorageData('genai_smart_bookmarks', activeBookmarks);
     
+    // eslint-disable-next-line no-console
     console.log('Data cleanup completed', {
       summariesRemoved: summaryHistory.length - filteredSummaries.length,
       conversationsRemoved: conversationHistory.length - filteredConversations.length,
@@ -173,6 +196,9 @@ export class StorageService {
     });
   }
 
+  /**
+   * @param {{includeApiKeys?: boolean, format?: string}} options
+   */
   async exportUserData(options = {}) {
     const { includeApiKeys = false, format = 'json' } = options;
     
@@ -194,6 +220,9 @@ export class StorageService {
     return format === 'json' ? JSON.stringify(userData, null, 2) : userData;
   }
 
+  /**
+   * @param {any} importData
+   */
   async importUserData(importData) {
     try {
       const data = typeof importData === 'string' ? JSON.parse(importData) : importData;
@@ -236,25 +265,33 @@ export class StorageService {
       }
       
       return importResults;
-    } catch (error) {
+    } catch (/** @type {any} */ error) {
       throw new Error(`Import failed: ${error.message}`);
     }
   }
 
+  /**
+   * @param {string} key
+   * @param {any} defaultValue
+   */
   async getStorageData(key, defaultValue = null) {
     try {
       const result = await chrome.storage.local.get([key]);
       return result[key] ?? defaultValue;
-    } catch (error) {
+    } catch (/** @type {any} */ error) {
       console.error(`Failed to get storage data for key: ${key}`, error);
       return defaultValue;
     }
   }
 
+  /**
+   * @param {string} key
+   * @param {any} value
+   */
   async setStorageData(key, value) {
     try {
       await chrome.storage.local.set({ [key]: value });
-    } catch (error) {
+    } catch (/** @type {any} */ error) {
       console.error(`Failed to set storage data for key: ${key}`, error);
       throw error;
     }

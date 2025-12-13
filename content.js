@@ -12,6 +12,7 @@ class PageContentExtractor {
         if (this.isInitialized) return;
         this.isInitialized = true;
         this.setupMessageListener();
+        // eslint-disable-next-line no-console
         console.log('GenAI Content Script: Initialized.');
     }
 
@@ -133,7 +134,7 @@ class PageContentExtractor {
         };
     }
 
-    highlightText(text, className = 'genai-highlight') {
+    highlightText(text, _className = 'genai-highlight') {
         // Implement highlighting logic if needed. For now, we focus on extraction.
         return {
             highlighted: true

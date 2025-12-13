@@ -15,21 +15,24 @@ class ContentScriptManager {
       return true; // Keep message channel open
     });
 
+    // eslint-disable-next-line no-console
     console.log('GenAI Content Script: Initialized on', window.location.href);
   }
 
   handleMessage(message, sender, sendResponse) {
     try {
       switch (message.action) {
-        case 'extractContent':
+        case 'extractContent': {
           const content = this.extractPageContent();
           sendResponse({ success: true, data: content });
           break;
+        }
           
-        case 'getSelectedText':
+        case 'getSelectedText': {
           const selectedText = window.getSelection().toString().trim();
           sendResponse({ success: true, data: selectedText });
           break;
+        }
           
         case 'highlightText':
           this.highlightText(message.text);
@@ -97,7 +100,7 @@ class ContentScriptManager {
     const textNodes = [];
     let node;
     
-    while (node = walker.nextNode()) {
+    while ((node = walker.nextNode())) {
       if (node.nodeValue.includes(text)) {
         textNodes.push(node);
       }

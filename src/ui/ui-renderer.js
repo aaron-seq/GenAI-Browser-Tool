@@ -11,7 +11,7 @@ export class UIRenderer {
   }
 
   renderSummaryCard(summaryData) {
-    const { summary, keyPoints = [], provider = 'AI' } = summaryData;
+    const { summary, keyPoints = [] } = summaryData;
     const keyPointsHtml = keyPoints.length > 0 
       ? keyPoints.map(point => `<li>${this.sanitizeHtml(point)}</li>`).join('')
       : '';

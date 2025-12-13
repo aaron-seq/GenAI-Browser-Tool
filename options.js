@@ -3,19 +3,18 @@
  * @description Logic for the extension's settings page.
  */
 
-import {
-    StorageManager
-} from './services/storage.js';
+import { ConfigurationManager } from './core/configuration-manager.js';
 
 class OptionsPage {
     constructor() {
-        this.storageManager = new StorageManager();
+        this.configManager = new ConfigurationManager();
         this.settings = {};
         this.initialize();
     }
 
+
     async initialize() {
-        this.settings = await this.storageManager.getSettings();
+        this.settings = await this.configManager.getUserPreferences();
         this.setupEventListeners();
         this.renderSettings();
         this.checkWelcome();
@@ -55,7 +54,7 @@ class OptionsPage {
             checked,
             id
         } = event.target;
-        let newSettings = { ...this.settings
+        const newSettings = { ...this.settings
         };
 
         if (name === 'primary-provider') {
@@ -67,15 +66,15 @@ class OptionsPage {
             newSettings.features[id] = checked;
         }
 
-        await this.storageManager.updateSettings(newSettings);
+        await this.configManager.updateUserPreferences(newSettings);
         this.settings = newSettings;
         this.showSaveIndicator();
     }
 
     async resetSettings() {
         if (confirm('Are you sure you want to reset all settings to their defaults?')) {
-            await this.storageManager.initializeDefaults();
-            this.settings = await this.storageManager.getSettings();
+            await this.configManager.setUserPreferences(this.configManager.defaultSettings);
+            this.settings = await this.configManager.getUserPreferences();
             this.renderSettings();
             this.showSaveIndicator('Settings reset to default.');
         }

@@ -33,7 +33,7 @@ export class ValidationService {
 
   /**
    * Validate if a tab is accessible for content extraction
-   * @param {Object} tab - Chrome tab object
+   * @param {any} tab - Chrome tab object
    * @returns {boolean} True if tab is valid and accessible
    */
   isValidWebPage(tab) {
@@ -93,7 +93,9 @@ export class ValidationService {
     const result = {
       isValid: false,
       sanitizedContent: '',
+      /** @type {string[]} */
       warnings: [],
+      /** @type {string[]} */
       errors: []
     };
 
@@ -133,7 +135,9 @@ export class ValidationService {
   validateApiKey(apiKey, provider = 'unknown') {
     const result = {
       isValid: false,
+      /** @type {string[]} */
       errors: [],
+      /** @type {string[]} */
       warnings: []
     };
 
@@ -156,6 +160,7 @@ export class ValidationService {
       google: /^[a-zA-Z0-9\-_]{20,}$/
     };
 
+    // @ts-ignore - Type 'string' cannot be used to index type '{ openai: RegExp; anthropic: RegExp; google: RegExp; }'.
     const pattern = providerPatterns[provider.toLowerCase()];
     if (pattern && !pattern.test(trimmedKey)) {
       result.warnings.push(`API key format doesn't match expected pattern for ${provider}`);
@@ -182,6 +187,7 @@ export class ValidationService {
       sanitizedUrl: '',
       protocol: '',
       domain: '',
+      /** @type {string[]} */
       errors: []
     };
 
@@ -227,7 +233,9 @@ export class ValidationService {
   validateFileUpload(file) {
     const result = {
       isValid: false,
+      /** @type {string[]} */
       errors: [],
+      /** @type {string[]} */
       warnings: []
     };
 
@@ -359,6 +367,7 @@ export class ValidationService {
     };
 
     return text.replace(/&[#\w]+;/g, (entity) => {
+      // @ts-ignore - Type 'string' cannot be used to index type
       return entityMap[entity] || entity;
     });
   }
@@ -368,19 +377,22 @@ export class ValidationService {
    * @returns {boolean} True if in development
    */
   isDevelopmentMode() {
-    return typeof __DEV__ !== 'undefined' && __DEV__ === true;
+    // @ts-ignore - Global defined by build tool
+    return typeof __DEV__ !== 'undefined' && __DEV__ === true; // eslint-disable-line no-undef
   }
 
   /**
    * Validate configuration object
-   * @param {Object} config - Configuration to validate
-   * @param {Object} schema - Expected schema
+   * @param {any} config - Configuration to validate
+   * @param {any} schema - Expected schema
    * @returns {Object} Validation result
    */
   validateConfiguration(config, schema) {
     const result = {
       isValid: false,
+      /** @type {string[]} */
       errors: [],
+      /** @type {string[]} */
       warnings: []
     };
 
@@ -433,6 +445,29 @@ export class ValidationService {
 
     result.isValid = result.errors.length === 0;
     return result;
+  }
+
+  /**
+   * Validate extension message structure and sender
+   * @param {any} message - The message object
+   * @param {any} sender - The message sender
+   * @returns {boolean} True if message is valid
+   */
+  validateMessage(message, sender) {
+    if (!message || typeof message !== 'object') {
+      return false;
+    }
+
+    if (!message.actionType || typeof message.actionType !== 'string') {
+      return false;
+    }
+
+    // Basic sender validation
+    if (!sender) {
+      return false;
+    }
+
+    return true;
   }
 
   /**

@@ -3,10 +3,11 @@
  * Configures global test environment, mocks, and utilities
  */
 
-import { vi } from 'vitest';
+import { vi, afterEach } from 'vitest';
 import { JSDOM } from 'jsdom';
 
 // Mock Chrome extension APIs
+/** @type {any} */
 const mockChrome = {
   runtime: {
     onMessage: {
@@ -24,15 +25,15 @@ const mockChrome = {
   storage: {
     local: {
       get: vi.fn().mockResolvedValue({}),
-      set: vi.fn().mockResolvedValue(),
-      remove: vi.fn().mockResolvedValue(),
-      clear: vi.fn().mockResolvedValue()
+      set: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined)
     },
     sync: {
       get: vi.fn().mockResolvedValue({}),
-      set: vi.fn().mockResolvedValue(),
-      remove: vi.fn().mockResolvedValue(),
-      clear: vi.fn().mockResolvedValue()
+      set: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined)
     }
   },
   tabs: {
@@ -48,7 +49,7 @@ const mockChrome = {
   },
   contextMenus: {
     create: vi.fn(),
-    removeAll: vi.fn().mockResolvedValue(),
+    removeAll: vi.fn().mockResolvedValue(undefined),
     onClicked: {
       addListener: vi.fn()
     }
@@ -87,13 +88,13 @@ const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
   resources: 'usable'
 });
 
-global.window = dom.window;
+global.window = /** @type {any} */ (dom.window);
 global.document = dom.window.document;
-global.navigator = dom.window.navigator;
+global.navigator = /** @type {any} */ (dom.window.navigator);
 global.HTMLElement = dom.window.HTMLElement;
 
 // Mock console methods in test environment
-if (process.env.NODE_ENV === 'test') {
+if (process.env['NODE_ENV'] === 'test') {
   global.console = {
     ...console,
     log: vi.fn(),
@@ -105,6 +106,7 @@ if (process.env.NODE_ENV === 'test') {
 }
 
 // Setup performance mock
+/** @type {any} */
 global.performance = {
   now: vi.fn(() => Date.now()),
   mark: vi.fn(),
