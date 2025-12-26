@@ -254,7 +254,7 @@ export class AIService {
    * @param {Object} requestParams - Request parameters
    * @returns {Promise<Object>} Provider response
    */
-  async makeProviderRequest(requestParams) {
+  async makeProviderRequest(_requestParams) {
     // This would interface with the actual AI provider APIs
     // For now, return a mock response
     return {
