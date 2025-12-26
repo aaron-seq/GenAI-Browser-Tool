@@ -32,7 +32,7 @@ test.describe('Extension Loading', () => {
     expect(extensionErrors).toHaveLength(0);
   });
 
-  test('should create context menu items', async ({ page, context }) => {
+  test('should create context menu items', async ({ page, context: _context }) => {
     await page.goto('https://example.com');
     
     // Select some text to trigger context menu

@@ -435,7 +435,7 @@ class PopupInterfaceManager {
     return text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   }
 
-  updatePageInfo(title, status) {
+  updatePageInfo(title, _status) {
     const titleEl = document.getElementById('current-page-title');
     if (titleEl) titleEl.textContent = title;
   }
@@ -481,7 +481,7 @@ class PopupInterfaceManager {
     const text = el.innerText;
     navigator.clipboard.writeText(text).then(() => {
       this.showSuccessToast('Copied to clipboard');
-    }).catch(err => {
+    }).catch(_err => {
       this.showErrorToast('Failed to copy');
     });
   }
@@ -504,7 +504,7 @@ class PopupInterfaceManager {
   }
   refreshAnalysisCards() {}
   updateLanguageDetection() {}
-  calculateReadabilityScore(text) { return { score: 80, level: 'Easy' }; }
+  calculateReadabilityScore(_text) { return { score: 80, level: 'Easy' }; }
   
   displayAnalysisResult(type, data) {
     const el = document.getElementById(`${type}-result`);

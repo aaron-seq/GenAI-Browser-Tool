@@ -38,7 +38,7 @@ describe('Extension Integration Workflow', () => {
       const messageHandler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
 
       // Execute handler - Note: the handler is async but returns true immediately
-      const result = messageHandler(message, sender, sendResponse);
+      messageHandler(message, sender, sendResponse);
       
       // Verify response is eventually sent
       await vi.waitFor(() => {
