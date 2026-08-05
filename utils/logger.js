@@ -49,11 +49,14 @@ export class Logger {
     }
   }
 
+  /** @param {string} level */
   shouldLog(level) {
+    /** @type {Record<string, number>} */
     const levels = { debug: 0, info: 1, warn: 2, error: 3 };
-    return levels[level] >= levels[this.logLevel];
+    return (levels[level] ?? 0) >= (levels[this.logLevel] ?? 0);
   }
 
+  /** @param {string} level */
   setLogLevel(level) {
     this.logLevel = level;
   }

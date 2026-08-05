@@ -82,16 +82,5 @@ export default [
       name: 'OptionsInterface',
       sourcemap: !isProduction
     }
-  },
-  // Offscreen script
-  {
-    ...baseConfig,
-    input: 'offscreen.js',
-    output: {
-      file: 'dist/offscreen.js',
-      format: 'iife',
-      name: 'OffscreenWorker',
-      sourcemap: !isProduction
-    }
   }
 ];

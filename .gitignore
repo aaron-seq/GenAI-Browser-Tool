@@ -5,6 +5,17 @@
 /dist
 /build
 
+# Test output
+/coverage
+/playwright-report
+/test-results
+
+# Local secrets — the extension stores API keys in chrome.storage, but keep
+# stray env files out of history regardless.
+.env
+.env.*
+!.env.example
+
 # Logs
 *.log
 npm-debug.log*

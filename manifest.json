@@ -1,48 +1,37 @@
 {
   "manifest_version": 3,
-  "name": "GenAI Browser Tool - Advanced AI Assistant",
-  "version": "4.1.0",
-  "description": "Advanced AI-powered browser extension with multi-provider support, intelligent summarization, contextual Q&A, translation, and content analysis",
+  "name": "GenAI Browser Tool",
+  "version": "5.0.0",
+  "description": "Summarize, question, translate, and analyse the page you are on, using the AI provider and API key you choose.",
   "author": "Aaron Sequeira <aaronsequeira12@gmail.com>",
-  
+
   "permissions": [
     "storage",
     "activeTab",
     "contextMenus",
-    "scripting",
-    "offscreen",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
-  
-  "optional_permissions": [
-    "tabs",
-    "bookmarks",
-    "history"
-  ],
-  
+
   "host_permissions": [
     "https://api.openai.com/*",
     "https://api.anthropic.com/*",
-    "https://generativelanguage.googleapis.com/*",
-    "https://api.cohere.ai/*",
-    "https://api.huggingface.co/*"
+    "https://generativelanguage.googleapis.com/*"
   ],
-  
+
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-  
+
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-
+      "matches": ["http://*/*", "https://*/*"],
       "js": ["content.js"],
-      "css": ["popup.css"],
       "run_at": "document_end"
     }
   ],
-  
+
   "action": {
     "default_popup": "popup.html",
     "default_title": "GenAI Browser Tool",
@@ -53,62 +42,29 @@
       "128": "assets/icons/icon-128.png"
     }
   },
-  
+
   "icons": {
     "16": "assets/icons/icon-16.png",
     "32": "assets/icons/icon-32.png",
     "48": "assets/icons/icon-48.png",
     "128": "assets/icons/icon-128.png"
   },
-  
+
   "options_page": "options.html",
-  
-  "offscreen": {
-    "url": "offscreen.html",
-    "reasons": ["DOM_PARSER"],
-    "justification": "Parse DOM content for AI processing"
-  },
-  
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "assets/*",
-        "popup.css",
-        "options.css",
-        "*.js.map"
-      ],
-      "matches": ["<all_urls>"]
-    }
-  ],
-  
+
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://api.cohere.ai https://api.huggingface.co; img-src 'self' data: https:;"
+    "extension_pages": "script-src 'self'; object-src 'self'"
   },
-  
+
   "commands": {
-    "toggle-popup": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+G",
-        "mac": "Command+Shift+G"
-      },
-      "description": "Toggle GenAI popup"
-    },
     "quick-summarize": {
       "suggested_key": {
         "default": "Ctrl+Shift+S",
         "mac": "Command+Shift+S"
       },
-      "description": "Quick page summarization"
-    },
-    "analyze-selection": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+A",
-        "mac": "Command+Shift+A"
-      },
-      "description": "Analyze selected text"
+      "description": "Summarize the current page"
     }
   },
-  
-  "incognito": "spanning",
-  "minimum_chrome_version": "88"
+
+  "minimum_chrome_version": "116"
 }

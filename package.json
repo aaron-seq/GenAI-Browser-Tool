@@ -1,24 +1,21 @@
 {
   "name": "genai-browser-tool",
-  "version": "4.0.1",
-  "description": "Advanced AI-powered browser extension with intelligent summarization, Q&A, translation, sentiment analysis, content extraction, and smart productivity features.",
+  "version": "5.0.0",
+  "description": "Chrome extension that summarizes, questions, translates, and analyses the current page using an AI provider and API key you supply.",
   "type": "module",
   "scripts": {
-    "build": "npm run build:extension && npm run build:web",
-    "build:extension": "rollup -c rollup.extension.config.js",
-    "build:web": "vite build",
-    "dev": "vite dev",
-    "dev:extension": "rollup -c rollup.extension.config.js --watch",
-    "test": "vitest",
+    "build": "rollup -c rollup.extension.config.js",
+    "dev": "rollup -c rollup.extension.config.js --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:coverage": "vitest --coverage",
-    "lint": "eslint . --ext .js,.ts,.json --fix",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint . --ext .js,.ts,.json",
+    "lint:fix": "eslint . --ext .js,.ts,.json --fix",
     "format": "prettier --write \"**/*.{js,ts,json,css,html,md}\"",
     "typecheck": "tsc --noEmit",
-    "prepare": "husky install",
-    "deploy:vercel": "vercel --prod",
-    "deploy:railway": "railway deploy",
-    "deploy:render": "render-deploy"
+    "verify": "npm run lint && npm run typecheck && npm run test",
+    "prepare": "husky install"
   },
   "keywords": [
     "ai",
@@ -57,9 +54,7 @@
     "@types/node": "^20.10.4",
     "@typescript-eslint/eslint-plugin": "^6.14.0",
     "@typescript-eslint/parser": "^6.14.0",
-    "@vitejs/plugin-react": "^4.2.1",
     "@vitest/coverage-v8": "^1.0.4",
-    "autoprefixer": "^10.4.16",
     "eslint": "^8.55.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.0",
@@ -68,26 +63,14 @@
     "husky": "^8.0.3",
     "jsdom": "^23.0.1",
     "lint-staged": "^15.2.0",
-    "postcss": "^8.4.32",
     "prettier": "^3.1.1",
     "rollup": "^4.7.0",
-    "tailwindcss": "^3.3.6",
+    "tslib": "^2.8.1",
     "typescript": "^5.3.3",
-    "vite": "^5.0.8",
-    "vite-plugin-pwa": "^0.17.4",
     "vitest": "^1.0.4"
   },
-  "dependencies": {
-    "@ai-sdk/anthropic": "^0.0.11",
-    "@ai-sdk/openai": "^0.0.13",
-    "@google-ai/generativelanguage": "^2.5.0",
-    "ai": "^2.2.29",
-    "dompurify": "^3.0.7",
-    "idb": "^7.1.1",
-    "marked": "^11.1.1",
-    "tslib": "^2.8.1",
-    "validator": "^13.11.0",
-    "zod": "^3.22.4"
+  "comments": {
+    "dependencies": "The extension ships zero runtime dependencies. It uses fetch, chrome.* APIs, and the DOM only. tslib is a devDependency required by @rollup/plugin-typescript."
   },
   "lint-staged": {
     "*.{js,ts}": [

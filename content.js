@@ -1,184 +1,142 @@
 /**
  * @file content.js
- * @description Content script for GenAI Browser Tool. Extracts page content and interacts with the DOM.
+ * @description Content script: reads the page and hands text to the extension.
+ *
+ * This script only ever reads. It does not modify the page, inject styles, or
+ * send anything anywhere — the background service worker is the only component
+ * that talks to a network.
  */
 
 class PageContentExtractor {
-    constructor() {
-        this.initialize();
-    }
+  constructor() {
+    chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+      this.handleMessage(request)
+        .then(data => sendResponse({ success: true, data }))
+        .catch(/** @param {any} error */ error =>
+          sendResponse({ success: false, error: error.message })
+        );
+      return true; // async sendResponse
+    });
+  }
 
-    initialize() {
-        if (this.isInitialized) return;
-        this.isInitialized = true;
-        this.setupMessageListener();
-        // eslint-disable-next-line no-console
-        console.log('GenAI Content Script: Initialized.');
+  /**
+   * @param {any} request
+   * @returns {Promise<any>}
+   */
+  async handleMessage(request) {
+    switch (request.action) {
+      case 'extractContent':
+        return this.extractPageContent();
+      case 'extractSelection':
+        return this.extractSelectedText();
+      case 'getPageMetadata':
+        return this.getPageMetadata();
+      case 'extractLinks':
+        return this.extractLinks();
+      case 'extractImages':
+        return this.extractImages();
+      default:
+        throw new Error(`Unknown action: ${request.action}`);
     }
+  }
 
-    setupMessageListener() {
-        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-            this.handleMessage(request)
-                .then(response => sendResponse({
-                    success: true,
-                    data: response
-                }))
-                .catch(error => sendResponse({
-                    success: false,
-                    error: error.message
-                }));
-            return true; // Keep message channel open for async response.
-        });
-    }
+  extractPageContent() {
+    return {
+      title: this.getPageTitle(),
+      url: window.location.href,
+      domain: window.location.hostname,
+      mainText: this.getMainText(),
+      headings: this.extractHeadings(),
+      metadata: this.getPageMetadata(),
+      language: document.documentElement.lang || 'unknown',
+      timestamp: Date.now()
+    };
+  }
 
-    async handleMessage(request) {
-        const {
-            action,
-            data
-        } = request;
-        switch (action) {
-            case 'extractContent':
-                return this.extractPageContent();
-            case 'extractSelection':
-                return this.extractSelectedText();
-            case 'highlightText':
-                return this.highlightText(data.text, data.className);
-            case 'scrollToText':
-                return this.scrollToText(data.text);
-            case 'getPageMetadata':
-                return this.getPageMetadata();
-            case 'extractImages':
-                return this.extractImages();
-            case 'extractLinks':
-                return this.extractLinks();
-            default:
-                throw new Error(`Unknown action: ${action}`);
-        }
-    }
+  getPageTitle() {
+    return document.title || document.querySelector('h1')?.textContent?.trim() || 'Untitled Page';
+  }
 
-    extractPageContent() {
+  /**
+   * Take the most specific container that looks like article content, then strip
+   * chrome (nav, ads, comments) from a clone so the live page is never touched.
+   *
+   * @returns {string}
+   */
+  getMainText() {
+    const selectors = [
+      'article', '[role="main"]', 'main', '.post-content', '.entry-content',
+      '#content', '.story-body', 'body'
+    ];
+    const mainElement = selectors
+      .map(selector => document.querySelector(selector))
+      .find(element => element);
+
+    if (!mainElement) return '';
+
+    const clone = /** @type {HTMLElement} */ (mainElement.cloneNode(true));
+    const unwanted = [
+      'script', 'style', 'noscript', 'nav', 'header', 'footer', 'aside',
+      '.ad', '.sidebar', '.comments', '[role="navigation"]', '[role="banner"]'
+    ];
+    unwanted.forEach(selector => {
+      clone.querySelectorAll(selector).forEach(element => element.remove());
+    });
+
+    // innerText (not textContent) so hidden elements stay out and block-level
+    // structure survives as line breaks.
+    return (clone.innerText || clone.textContent || '').trim();
+  }
+
+  extractHeadings() {
+    return Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+      .map(heading => ({
+        level: Number(heading.tagName[1]),
+        text: heading.textContent?.trim() || ''
+      }))
+      .filter(heading => heading.text);
+  }
+
+  getPageMetadata() {
+    /** @type {Record<string, string>} */
+    const metadata = {};
+    document.querySelectorAll('meta').forEach(meta => {
+      const name = meta.getAttribute('name') || meta.getAttribute('property');
+      const content = meta.getAttribute('content');
+      if (name && content) metadata[name] = content;
+    });
+    return metadata;
+  }
+
+  extractSelectedText() {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    return text ? { text } : null;
+  }
+
+  extractLinks() {
+    return Array.from(document.querySelectorAll('a[href]'))
+      .map(anchor => {
+        const link = /** @type {HTMLAnchorElement} */ (anchor);
         return {
-            title: this.getPageTitle(),
-            url: window.location.href,
-            domain: window.location.hostname,
-            mainText: this.getMainText(),
-            headings: this.extractHeadings(),
-            metadata: this.getPageMetadata(),
-            language: document.documentElement.lang || 'en',
-            timestamp: Date.now(),
+          href: link.href,
+          text: link.textContent?.trim() || '',
+          isExternal: link.hostname !== window.location.hostname
         };
-    }
+      })
+      .filter(link => link.href.startsWith('http'));
+  }
 
-    getPageTitle() {
-        return document.title || document.querySelector('h1')?.textContent?.trim() || 'Untitled Page';
-    }
-
-    getMainText() {
-        const selectors = [
-            'article', '[role="main"]', 'main', '.post-content', '.entry-content',
-            '#content', '.story-body', 'body'
-        ];
-        const mainElement = selectors.map(s => document.querySelector(s)).find(el => el);
-
-        if (!mainElement) return '';
-
-        const clonedElement = mainElement.cloneNode(true);
-        this.removeUnwantedElements(clonedElement);
-        return clonedElement.innerText?.trim() || '';
-    }
-
-    removeUnwantedElements(element) {
-        const unwantedSelectors = [
-            'script', 'style', 'nav', 'header', 'footer', '.ad', '.sidebar',
-            '.comments', '[role="navigation"]', '[role="banner"]'
-        ];
-        unwantedSelectors.forEach(selector => {
-            element.querySelectorAll(selector).forEach(el => el.remove());
-        });
-    }
-
-    extractHeadings() {
-        return Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
-            .map(h => ({
-                level: parseInt(h.tagName[1]),
-                text: h.textContent?.trim(),
-            }))
-            .filter(h => h.text);
-    }
-
-    getPageMetadata() {
-        const metadata = {};
-        document.querySelectorAll('meta').forEach(meta => {
-            const name = meta.getAttribute('name') || meta.getAttribute('property');
-            if (name) metadata[name] = meta.getAttribute('content');
-        });
-        return metadata;
-    }
-
-    extractSelectedText() {
-        const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0) return null;
-
-        const text = selection.toString().trim();
-        if (!text) return null;
-
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-
-        return {
-            text,
-            position: {
-                top: rect.top + window.scrollY,
-                left: rect.left + window.scrollX,
-            },
-        };
-    }
-
-    highlightText(text, _className = 'genai-highlight') {
-        // Implement highlighting logic if needed. For now, we focus on extraction.
-        return {
-            highlighted: true
-        };
-    }
-
-    scrollToText(text) {
-        const element = Array.from(document.querySelectorAll('*'))
-            .find(el => el.textContent?.includes(text));
-        if (element) {
-            element.scrollIntoView({
-                behavior: 'smooth',
-                block: 'center'
-            });
-            return true;
-        }
-        return false;
-    }
-
-    extractImages() {
-        return Array.from(document.querySelectorAll('img'))
-            .map(img => ({
-                src: img.src,
-                alt: img.alt,
-                width: img.naturalWidth,
-                height: img.naturalHeight,
-            }))
-            .filter(img => img.src && !img.src.startsWith('data:'));
-    }
-
-    extractLinks() {
-        return Array.from(document.querySelectorAll('a[href]'))
-            .map(a => ({
-                href: a.href,
-                text: a.textContent?.trim(),
-                isExternal: a.hostname !== window.location.hostname,
-            }))
-            .filter(link => link.href && !link.href.startsWith('javascript:'));
-    }
+  extractImages() {
+    return Array.from(document.querySelectorAll('img'))
+      .map(image => ({
+        src: image.src,
+        alt: image.alt,
+        width: image.naturalWidth,
+        height: image.naturalHeight
+      }))
+      .filter(image => image.src && !image.src.startsWith('data:'));
+  }
 }
 
-// Ensure the script runs once the DOM is ready.
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => new PageContentExtractor());
-} else {
-    new PageContentExtractor();
-}
+new PageContentExtractor();
