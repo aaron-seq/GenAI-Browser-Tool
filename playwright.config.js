@@ -1,59 +1,29 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig } from '@playwright/test';
 
 /**
- * Playwright configuration for E2E testing of GenAI Browser Tool
- * Tests the extension in actual browser environments
+ * E2E configuration.
+ *
+ * Chrome extensions can only be loaded into a *persistent* context, so each test
+ * launches its own context via the fixture in tests/e2e/fixtures.js rather than
+ * using Playwright's default `page`. There is no `use.browserName` or
+ * `launchOptions` here for that reason — the fixture owns browser launch.
+ *
+ * There is also no `webServer`: the extension is a browser extension, not a web
+ * app, and the tests serve their fixture pages by intercepting requests.
  */
 export default defineConfig({
   testDir: './tests/e2e',
-  fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
-  
+  // Each test launches a browser with its own profile directory; running them in
+  // parallel on one machine is slow and flaky.
+  fullyParallel: false,
+  workers: 1,
+  forbidOnly: !!process.env['CI'],
+  retries: process.env['CI'] ? 2 : 0,
+  reporter: process.env['CI'] ? [['html'], ['list']] : 'list',
+  timeout: 30000,
+
   use: {
-    baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure'
-  },
-
-  projects: [
-    {
-      name: 'chromium-extension',
-      use: { 
-        ...devices['Desktop Chrome'],
-        // Extension-specific configuration
-        launchOptions: {
-          args: [
-            '--disable-extensions-except=.',
-            '--load-extension=.',
-            '--disable-web-security',
-            '--disable-features=TranslateUI',
-            '--disable-ipc-flooding-protection'
-          ]
-        }
-      },
-    },
-    {
-      name: 'edge-extension',
-      use: { 
-        ...devices['Desktop Edge'],
-        launchOptions: {
-          args: [
-            '--disable-extensions-except=.',
-            '--load-extension=.',
-            '--disable-web-security'
-          ]
-        }
-      },
-    }
-  ],
-
-  webServer: {
-    command: 'npm run dev',
-    port: 3000,
-    reuseExistingServer: !process.env.CI
+    screenshot: 'only-on-failure'
   }
 });

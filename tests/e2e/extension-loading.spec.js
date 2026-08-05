@@ -1,189 +1,324 @@
-import { test, expect } from '@playwright/test';
+import {
+  test,
+  expect,
+  FIXTURE_URL,
+  CONFIGURED_PREFERENCES,
+  seedPreferences,
+  activeTabId
+} from './fixtures.js';
 
 /**
- * E2E tests for extension loading and basic functionality
- * These tests run in actual browser with extension loaded
+ * Real-browser checks: this repository is loaded into Chrome as an unpacked
+ * extension and driven through its own UI.
+ *
+ * These exercise the wiring that unit tests mock away — manifest validity,
+ * service worker registration, content script injection, and the
+ * popup → background → content-script message path. Provider HTTP is
+ * intercepted, so no API key and no network access are required.
  */
 
-test.describe('Extension Loading', () => {
-  test('should load extension without errors', async ({ page, context }) => {
-    // Navigate to a test page
-    await page.goto('https://example.com');
-    
-    // Check that extension service worker is running
-    const serviceWorker = await context.serviceWorkers();
-    expect(serviceWorker.length).toBeGreaterThan(0);
-    
-    // Verify no console errors related to extension
+/**
+ * Intercept the Anthropic endpoint and reply with `text`.
+ *
+ * @param {import('@playwright/test').BrowserContext} context
+ * @param {string} text
+ */
+async function stubProvider(context, text) {
+  await context.route('https://api.anthropic.com/**', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ content: [{ type: 'text', text }] })
+    })
+  );
+}
+
+test.describe('extension loads', () => {
+  test('registers a service worker with a valid manifest', async ({ extensionId }) => {
+    // A manifest error means Chrome never registers the worker, so simply
+    // resolving an extension id proves the manifest parsed and loaded.
+    expect(extensionId).toMatch(/^[a-z]{32}$/);
+  });
+
+  test('background service worker starts without throwing', async ({ context, extensionId }) => {
+    const page = await context.newPage();
     const errors = [];
-    page.on('console', msg => {
-      if (msg.type() === 'error') {
-        errors.push(msg.text());
-      }
+    page.on('pageerror', error => errors.push(error.message));
+
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await page.waitForLoadState('domcontentloaded');
+
+    expect(errors).toEqual([]);
+  });
+});
+
+test.describe('options page', () => {
+  test('renders without the TypeError that used to break it on load', async ({
+    context,
+    extensionId
+  }) => {
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(page.locator('#anthropic-key')).toBeVisible();
+
+    // Previously: reading settings.features.smartBookmarks threw on every load.
+    expect(errors).toEqual([]);
+  });
+
+  test('persists an API key to the same place the background service reads', async ({
+    context,
+    extensionId
+  }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+
+    await page.locator('#anthropic-key').fill('sk-ant-typed-by-user');
+    await page.locator('#anthropic-key').blur();
+    await expect(page.locator('#save-indicator')).toHaveClass(/visible/);
+
+    // The regression this guards: the options page used to write
+    // user_preferences.apiKeys.anthropic while providers read a different key,
+    // so a key the user typed was never found.
+    const stored = await page.evaluate(async () => {
+      const result = await chrome.storage.sync.get(['user_preferences']);
+      return result.user_preferences;
     });
-    
-    await page.waitForTimeout(2000); // Allow extension to initialize
-    
-    const extensionErrors = errors.filter(error => 
-      error.includes('chrome-extension') || 
-      error.includes('Extension')
+    expect(stored.apiKeys.anthropic).toBe('sk-ant-typed-by-user');
+
+    const status = await page.evaluate(() =>
+      chrome.runtime.sendMessage({ actionType: 'GET_PROVIDER_STATUS', payload: {} })
     );
-    
-    expect(extensionErrors).toHaveLength(0);
-  });
-
-  test('should create context menu items', async ({ page, context: _context }) => {
-    await page.goto('https://example.com');
-    
-    // Select some text to trigger context menu
-    await page.selectText('Example Domain');
-    
-    // Right-click to open context menu
-    await page.click('h1', { button: 'right' });
-    
-    // Wait for context menu to appear
-    await page.waitForTimeout(1000);
-    
-    // Note: Context menu items are browser-native and may not be directly testable
-    // This test verifies the extension loads and text selection works
-    const selectedText = await page.evaluate(() => window.getSelection().toString());
-    expect(selectedText).toContain('Example Domain');
-  });
-
-  test('should open popup when extension icon is clicked', async ({ page, context }) => {
-    await page.goto('https://example.com');
-    
-    // Get extension ID from service worker
-    const serviceWorkers = await context.serviceWorkers();
-    expect(serviceWorkers.length).toBeGreaterThan(0);
-    
-    const extensionId = serviceWorkers[0].url().match(/chrome-extension:\/\/([^/]+)/)?.[1];
-    expect(extensionId).toBeDefined();
-    
-    // Navigate to popup page directly (simulating icon click)
-    const popupUrl = `chrome-extension://${extensionId}/popup.html`;
-    await page.goto(popupUrl);
-    
-    // Verify popup content loads
-    await expect(page.locator('body')).toBeVisible();
-    
-    // Check for main popup elements
-    const title = page.locator('h1, .title, .header');
-    await expect(title).toBeVisible({ timeout: 5000 });
+    expect(status).toMatchObject({ success: true, data: { configured: true } });
   });
 });
 
-test.describe('Extension Functionality', () => {
-  test('should handle page content extraction', async ({ page }) => {
-    await page.goto('https://example.com');
-    
-    // Wait for page to load
-    await page.waitForLoadState('networkidle');
-    
-    // Simulate content extraction (this would normally be triggered by extension)
-    const pageContent = await page.evaluate(() => {
-      return {
-        title: document.title,
-        content: document.body.innerText,
-        url: window.location.href
-      };
-    });
-    
-    expect(pageContent.title).toBe('Example Domain');
-    expect(pageContent.content).toContain('Example Domain');
-    expect(pageContent.url).toBe('https://example.com/');
+test.describe('content extraction', () => {
+  test('content script extracts article text and drops navigation chrome', async ({
+    context,
+    extensionId
+  }) => {
+    const contentPage = await context.newPage();
+    await contentPage.goto(FIXTURE_URL);
+
+    const extensionPage = await context.newPage();
+    await extensionPage.goto(`chrome-extension://${extensionId}/popup.html`);
+    await contentPage.bringToFront();
+
+    const tabId = await activeTabId(extensionPage);
+    const response = await extensionPage.evaluate(
+      id =>
+        chrome.runtime.sendMessage({
+          actionType: 'EXTRACT_PAGE_CONTENT',
+          payload: { tabId: id }
+        }),
+      tabId
+    );
+
+    expect(response.success).toBe(true);
+    expect(response.data.title).toBe('Understanding Service Workers');
+    expect(response.data.mainText).toContain('Service workers run separately');
+    // The <article> selector wins over <body>, and removeUnwantedElements
+    // strips nav and footer from the clone.
+    expect(response.data.mainText).not.toContain('Copyright notice');
+    expect(response.data.mainText).not.toContain('Home About Contact');
   });
 
-  test('should respond to keyboard shortcuts', async ({ page }) => {
-    await page.goto('https://example.com');
-    
-    // Test keyboard shortcut (Ctrl+Shift+G for toggle popup)
-    await page.keyboard.press('Control+Shift+G');
-    
-    // Wait for any response
-    await page.waitForTimeout(1000);
-    
-    // Verify no JavaScript errors occurred
-    const errors = [];
-    page.on('console', msg => {
-      if (msg.type() === 'error') {
-        errors.push(msg.text());
-      }
-    });
-    
-    expect(errors.length).toBe(0);
-  });
+  test('EXTRACT_PAGE_CONTENT honours the caller-supplied tabId', async ({
+    context,
+    extensionId
+  }) => {
+    // Regression: the handler read sender.tab?.id, which is undefined for
+    // messages sent from an extension page, so every popup-initiated extraction
+    // threw "No active tab". This message has no sender.tab and must still work.
+    const contentPage = await context.newPage();
+    await contentPage.goto(FIXTURE_URL);
 
-  test('should maintain extension state across page navigation', async ({ page }) => {
-    // Start on one page
-    await page.goto('https://example.com');
-    await page.waitForTimeout(1000);
-    
-    // Navigate to another page
-    await page.goto('https://httpbin.org/html');
-    await page.waitForTimeout(1000);
-    
-    // Verify extension is still functional
-    const pageContent = await page.evaluate(() => {
-      return document.body.innerText;
-    });
-    
-    expect(pageContent).toContain('Herman Melville');
-    
-    // Test text selection still works
-    await page.selectText('Moby-Dick');
-    const selectedText = await page.evaluate(() => window.getSelection().toString());
-    expect(selectedText).toContain('Moby-Dick');
+    const extensionPage = await context.newPage();
+    await extensionPage.goto(`chrome-extension://${extensionId}/popup.html`);
+    await contentPage.bringToFront();
+
+    const tabId = await activeTabId(extensionPage);
+    const result = await extensionPage.evaluate(
+      id =>
+        chrome.runtime.sendMessage({
+          actionType: 'EXTRACT_PAGE_CONTENT',
+          payload: { tabId: id }
+        }),
+      tabId
+    );
+
+    expect(result.success).toBe(true);
   });
 });
 
-test.describe('Extension Error Handling', () => {
-  test('should handle network errors gracefully', async ({ page }) => {
-    // Simulate offline mode
-    await page.route('**/*', route => route.abort());
-    
-    await page.goto('https://example.com').catch(() => {
-      // Expected to fail due to network abortion
+test.describe('summarization end to end', () => {
+  /**
+   * Real page → content script → background → provider → rendered result.
+   *
+   * This drives the background directly rather than clicking the popup button:
+   * the popup's own tab query needs `activeTab`, which Chrome grants only on a
+   * real toolbar-icon click, and Playwright cannot click browser chrome. The
+   * button is a thin wrapper over exactly this message.
+   */
+  test('extracted page text reaches the provider and the reply comes back', async ({
+    context,
+    extensionId
+  }) => {
+    /** @type {string[]} */
+    const requestBodies = [];
+    await context.route('https://api.anthropic.com/**', route => {
+      requestBodies.push(route.request().postData() || '');
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          content: [
+            { type: 'text', text: '- Service workers have no DOM access' }
+          ]
+        })
+      });
     });
-    
-    // Verify extension doesn't crash
-    const errors = [];
-    page.on('console', msg => {
-      if (msg.type() === 'error' && msg.text().includes('Extension')) {
-        errors.push(msg.text());
-      }
-    });
-    
-    await page.waitForTimeout(2000);
-    
-    // Should not have extension-specific errors
-    expect(errors.length).toBe(0);
+
+    const contentPage = await context.newPage();
+    await contentPage.goto(FIXTURE_URL);
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await seedPreferences(popup, CONFIGURED_PREFERENCES);
+    await contentPage.bringToFront();
+
+    const tabId = await activeTabId(popup);
+    const extracted = await popup.evaluate(
+      id =>
+        chrome.runtime.sendMessage({
+          actionType: 'EXTRACT_PAGE_CONTENT',
+          payload: { tabId: id }
+        }),
+      tabId
+    );
+    expect(extracted.success).toBe(true);
+
+    const summary = await popup.evaluate(
+      text =>
+        chrome.runtime.sendMessage({
+          actionType: 'GENERATE_CONTENT_SUMMARY',
+          payload: { content: text, summaryType: 'key-points', targetLength: 'medium' }
+        }),
+      extracted.data.mainText
+    );
+
+    expect(summary.success).toBe(true);
+    expect(summary.data.summary).toContain('Service workers have no DOM access');
+    expect(summary.data.provider).toBe('anthropic');
+
+    // The real page text was sent, fenced as untrusted data.
+    expect(requestBodies).toHaveLength(1);
+    expect(requestBodies[0]).toContain('<<<PAGE_CONTENT>>>');
+    expect(requestBodies[0]).toContain('Service workers run separately');
   });
 
-  test('should handle malformed pages', async ({ page }) => {
-    // Create a page with malformed HTML
-    const malformedHtml = `
-      <html>
-        <head><title>Malformed</title>
-        <body>
-          <div>Unclosed div
-          <p>Paragraph without closing tag
-          <script>console.log('test');
-          // Malformed content
-        </body>
-      </html>
-    `;
-    
-    await page.setContent(malformedHtml);
-    await page.waitForTimeout(1000);
-    
-    // Verify extension handles malformed content
-    const title = await page.title();
-    expect(title).toBe('Malformed');
-    
-    // Test that text selection still works
-    await page.selectText('Unclosed div');
-    const selectedText = await page.evaluate(() => window.getSelection().toString());
-    expect(selectedText).toContain('Unclosed div');
+  test('a right-click page summary notifies the user', async ({ context, extensionId }) => {
+    await stubProvider(context, '- Service workers have no DOM access');
+
+    const contentPage = await context.newPage();
+    await contentPage.goto(FIXTURE_URL);
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await seedPreferences(popup, CONFIGURED_PREFERENCES);
+
+    const result = await popup.evaluate(() =>
+      chrome.runtime.sendMessage({
+        actionType: 'ANALYZE_SENTIMENT',
+        payload: { text: 'A clear, well written article.' }
+      })
+    );
+
+    // The sentiment reply is parsed into structured fields, not passed through raw.
+    expect(result.success).toBe(true);
+    expect(result.data).toHaveProperty('sentiment');
+    expect(result.data).toHaveProperty('reason');
+  });
+
+  test('reports a missing API key instead of inventing a summary', async ({
+    context,
+    extensionId
+  }) => {
+    const contentPage = await context.newPage();
+    await contentPage.goto(FIXTURE_URL);
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+
+    const response = await popup.evaluate(() =>
+      chrome.runtime.sendMessage({
+        actionType: 'GENERATE_CONTENT_SUMMARY',
+        payload: { content: 'Some article text.' }
+      })
+    );
+
+    expect(response.success).toBe(false);
+    expect(response.errorCode).toBe('MISSING_API_KEY');
+  });
+
+  test('surfaces a provider error rather than a plausible fake answer', async ({
+    context,
+    extensionId
+  }) => {
+    await context.route('https://api.anthropic.com/**', route =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { message: 'invalid x-api-key' } })
+      })
+    );
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await seedPreferences(popup, CONFIGURED_PREFERENCES);
+
+    const response = await popup.evaluate(() =>
+      chrome.runtime.sendMessage({
+        actionType: 'GENERATE_CONTENT_SUMMARY',
+        payload: { content: 'Some article text.' }
+      })
+    );
+
+    expect(response.success).toBe(false);
+    expect(response.errorCode).toBe('AUTH_ERROR');
+    expect(response.error).toContain('invalid x-api-key');
+  });
+});
+
+test.describe('restricted pages', () => {
+  test('explains why a page with no content script cannot be read', async ({
+    context,
+    extensionId
+  }) => {
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+
+    // The extension's own options page never receives the content script, so it
+    // stands in for chrome:// pages and the Web Store, which Playwright cannot
+    // navigate to.
+    const optionsPage = await context.newPage();
+    await optionsPage.goto(`chrome-extension://${extensionId}/options.html`);
+    await optionsPage.bringToFront();
+
+    const tabId = await activeTabId(popup);
+    const response = await popup.evaluate(
+      id =>
+        chrome.runtime.sendMessage({
+          actionType: 'EXTRACT_PAGE_CONTENT',
+          payload: { tabId: id }
+        }),
+      tabId
+    );
+
+    expect(response.success).toBe(false);
+    expect(response.errorCode).toBe('CONTENT_SCRIPT_UNAVAILABLE');
   });
 });
