@@ -1,155 +1,244 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-describe('Extension Integration Workflow', () => {
+/**
+ * End-to-end through the background service worker: a message arrives, the
+ * configured provider is called over fetch, and a response goes back.
+ *
+ * The previous version of this suite asserted that summarization *succeeded*
+ * with no API key configured — which only passed because every provider
+ * returned a hardcoded stub string. These tests assert the real contract.
+ */
+
+/** @param {any} body */
+function okResponse(body) {
+  return { ok: true, status: 200, statusText: 'OK', json: vi.fn().mockResolvedValue(body) };
+}
+
+const CLAUDE_REPLY = okResponse({ content: [{ type: 'text', text: '- point one\n- point two' }] });
+
+/** Preferences with a working Anthropic key. */
+const CONFIGURED = {
+  user_preferences: {
+    initialized: true,
+    preferredProvider: 'anthropic',
+    apiKeys: { anthropic: 'sk-ant-test' },
+    models: {},
+    features: { contextMenus: true, notifications: true, saveHistory: true },
+    summaryType: 'key-points',
+    summaryLength: 'medium'
+  }
+};
+
+/**
+ * @param {string} actionType
+ * @param {any} payload
+ * @returns {Promise<any>}
+ */
+function dispatch(actionType, payload) {
+  const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
+  const sendResponse = vi.fn();
+  handler({ actionType, requestId: 'req-1', payload }, { id: 'mock-extension-id' }, sendResponse);
+  return vi.waitFor(() => {
+    expect(sendResponse).toHaveBeenCalled();
+    return sendResponse.mock.calls[0][0];
+  });
+}
+
+describe('Extension workflow', () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
-    
-    // Import background script to trigger initialization and listener registration
+    chrome.storage.sync.get.mockResolvedValue(CONFIGURED);
+    chrome.storage.local.get.mockResolvedValue({});
+
     await import('../../background.js');
-    
-    // Wait for async initialization
     await vi.waitFor(() => {
-      if (chrome.runtime.onMessage.addListener.mock.calls.length === 0) {
-        throw new Error('Waiting for onMessage listener');
-      }
+      expect(chrome.runtime.onMessage.addListener).toHaveBeenCalled();
     });
   });
 
-  describe('content summarization workflow', () => {
-    it('should complete full summarization workflow', async () => {
-      const message = {
-        actionType: 'GENERATE_CONTENT_SUMMARY',
-        requestId: 'test-summary-001',
-        payload: {
-          content: 'This is a long piece of content that needs to be summarized.',
-          summaryType: 'key-points',
-          targetLength: 'medium'
-        }
-      };
+  describe('summarization', () => {
+    it('calls the configured provider and returns its text', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
 
-      const sender = {
-        tab: { id: 1, url: 'https://example.com/article' }
-      };
-
-      const sendResponse = vi.fn();
-
-      // Retrieve the registered listener
-      const messageHandler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
-
-      // Execute handler - Note: the handler is async but returns true immediately
-      messageHandler(message, sender, sendResponse);
-      
-      // Verify response is eventually sent
-      await vi.waitFor(() => {
-        expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
-          success: true,
-          requestId: 'test-summary-001',
-          data: expect.objectContaining({
-            summary: expect.any(String),
-            provider: expect.any(String)
-          })
-        }));
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', {
+        content: 'A long article about browser extensions.',
+        summaryType: 'key-points',
+        targetLength: 'medium'
       });
+
+      expect(response.success).toBe(true);
+      expect(response.data.summary).toBe('- point one\n- point two');
+      expect(response.data.provider).toBe('anthropic');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.anthropic.com/v1/messages',
+        expect.objectContaining({ method: 'POST' })
+      );
     });
 
-    it('should handle summarization errors gracefully', async () => {
-      const message = {
-        actionType: 'GENERATE_CONTENT_SUMMARY',
-        requestId: 'test-error-001',
-        payload: {
-          content: '', // Empty content -> Error
-          summaryType: 'key-points'
-        }
-      };
+    it('persists the summary to local history', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
 
-      const sender = { tab: { id: 1, url: 'https://example.com' } };
-      const sendResponse = vi.fn();
-      const messageHandler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
+      await dispatch('GENERATE_CONTENT_SUMMARY', { content: 'article text' });
 
-      messageHandler(message, sender, sendResponse);
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          genai_summary_history: expect.arrayContaining([
+            expect.objectContaining({ provider: 'anthropic' })
+          ])
+        })
+      );
+    });
 
-      await vi.waitFor(() => {
-        expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
-          success: false,
-          error: expect.any(String),
-          requestId: 'test-error-001'
-        }));
+    it('rejects empty content before spending an API call', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', { content: '   ' });
+
+      expect(response.success).toBe(false);
+      expect(response.errorCode).toBe('NO_CONTENT');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('tells the user to configure a key instead of inventing a summary', async () => {
+      chrome.storage.sync.get.mockResolvedValue({
+        user_preferences: { initialized: true, preferredProvider: 'anthropic', apiKeys: {} }
       });
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', { content: 'article text' });
+
+      expect(response.success).toBe(false);
+      expect(response.errorCode).toBe('MISSING_API_KEY');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a provider failure rather than a plausible fake answer', async () => {
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+        json: vi.fn().mockResolvedValue({ error: { message: 'rate limit exceeded' } })
+      });
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', { content: 'article text' });
+
+      expect(response.success).toBe(false);
+      expect(response.error).toContain('rate limit exceeded');
     });
   });
 
-  describe('context menu integration', () => {
-    it('should register context menu items on installation', async () => {
+  describe('page content extraction', () => {
+    it('uses the tab id the popup supplies, since popup messages carry no sender.tab', async () => {
+      chrome.tabs.sendMessage.mockResolvedValue({ success: true, data: { mainText: 'page text' } });
+
+      const response = await dispatch('EXTRACT_PAGE_CONTENT', { tabId: 42 });
+
+      expect(response.success).toBe(true);
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(42, { action: 'extractContent' });
+    });
+
+    it('explains why restricted pages cannot be read', async () => {
+      chrome.tabs.sendMessage.mockRejectedValue(new Error('Receiving end does not exist'));
+
+      const response = await dispatch('EXTRACT_PAGE_CONTENT', { tabId: 42 });
+
+      expect(response.success).toBe(false);
+      expect(response.errorCode).toBe('CONTENT_SCRIPT_UNAVAILABLE');
+      expect(response.error).toMatch(/browser pages or the Chrome Web Store/);
+    });
+
+    it('fails clearly when there is no tab at all', async () => {
+      const response = await dispatch('EXTRACT_PAGE_CONTENT', {});
+
+      expect(response.success).toBe(false);
+      expect(response.errorCode).toBe('NO_TAB');
+    });
+  });
+
+  describe('analysis actions', () => {
+    it('parses a sentiment reply into structured fields', async () => {
+      global.fetch.mockResolvedValue(
+        okResponse({ content: [{ type: 'text', text: 'Sentiment: positive\nReason: upbeat tone' }] })
+      );
+
+      const response = await dispatch('ANALYZE_SENTIMENT', { text: 'A glowing review.' });
+
+      expect(response.success).toBe(true);
+      expect(response.data.sentiment).toBe('positive');
+      expect(response.data.reason).toBe('upbeat tone');
+    });
+
+    it('parses smart tags into an array', async () => {
+      global.fetch.mockResolvedValue(
+        okResponse({ content: [{ type: 'text', text: 'ai, browsers, privacy' }] })
+      );
+
+      const response = await dispatch('GENERATE_SMART_TAGS', { text: 'An article.' });
+
+      expect(response.data.tags).toEqual(['ai', 'browsers', 'privacy']);
+    });
+  });
+
+  describe('message validation', () => {
+    it('rejects a message with no actionType', async () => {
+      const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
+      const sendResponse = vi.fn();
+      handler({ payload: {} }, { id: 'mock-extension-id' }, sendResponse);
+
+      await vi.waitFor(() => expect(sendResponse).toHaveBeenCalled());
+      expect(sendResponse.mock.calls[0][0]).toMatchObject({ success: false });
+    });
+
+    it('rejects an unknown action type', async () => {
+      const response = await dispatch('DROP_DATABASE', {});
+      expect(response.errorCode).toBe('UNSUPPORTED_ACTION');
+    });
+  });
+
+  describe('context menus', () => {
+    it('registers menu items on install', async () => {
       const installHandler = chrome.runtime.onInstalled.addListener.mock.calls[0][0];
       await installHandler({ reason: 'install' });
 
       expect(chrome.contextMenus.removeAll).toHaveBeenCalled();
-      expect(chrome.contextMenus.create).toHaveBeenCalled();
-      
-      const createCalls = chrome.contextMenus.create.mock.calls;
-      expect(createCalls.length).toBeGreaterThan(0);
-      expect(createCalls.map(c => c[0].id)).toContain('genai-summarize-selection');
+      const ids = chrome.contextMenus.create.mock.calls.map(call => call[0].id);
+      expect(ids).toContain('genai-summarize-selection');
     });
 
-    it('should handle context menu clicks', async () => {
-      const menuInfo = {
-        menuItemId: 'genai-summarize-selection',
-        selectionText: 'Selected text'
-      };
-      const tab = { id: 1, url: 'https://example.com' };
-
+    it('summarizes a selection and notifies the user', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
       const clickHandler = chrome.contextMenus.onClicked.addListener.mock.calls[0][0];
-      await clickHandler(menuInfo, tab);
 
-      expect(chrome.notifications.create).toHaveBeenCalled();
-    });
-  });
+      await clickHandler(
+        { menuItemId: 'genai-summarize-selection', selectionText: 'Some selected text' },
+        { id: 1 }
+      );
 
-  describe('keyboard shortcuts', () => {
-    it('should handle keyboard command triggers', async () => {
-      const commandHandler = chrome.commands.onCommand.addListener.mock.calls[0][0];
-      await commandHandler('toggle-popup'); // Valid command
-      
-      // Just verifying invocation without error
-      expect(chrome.commands.onCommand.addListener).toHaveBeenCalled();
-    });
-  });
-
-  describe('storage integration', () => {
-    it('should persist user preferences', async () => {
-      const preferences = {
-        aiProvider: 'openai',
-        summaryLength: 'medium',
-        language: 'en'
-      };
-
-      // Mock implementation for setting/getting to simulate storage
-      let storage = {};
-      chrome.storage.local.set.mockImplementation((items) => {
-        storage = { ...storage, ...items };
-        return Promise.resolve();
-      });
-      chrome.storage.local.get.mockImplementation((keys) => {
-        if (typeof keys === 'string') return Promise.resolve({ [keys]: storage[keys] });
-        return Promise.resolve(storage);
-      });
-
-      await chrome.storage.local.set({ userPreferences: preferences });
-      const stored = await chrome.storage.local.get('userPreferences');
-
-      expect(chrome.storage.local.set).toHaveBeenCalledWith({ userPreferences: preferences });
-      expect(stored.userPreferences).toEqual(preferences);
+      expect(global.fetch).toHaveBeenCalled();
+      expect(chrome.notifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Summary' })
+      );
     });
 
-    it('should handle storage quota exceeded', async () => {
-      const error = new Error('Quota exceeded');
-      error.name = 'QuotaExceededError';
-      
-      chrome.storage.local.set.mockRejectedValueOnce(error);
+    it('notifies on failure instead of failing silently', async () => {
+      global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+      const clickHandler = chrome.contextMenus.onClicked.addListener.mock.calls[0][0];
 
-      await expect(chrome.storage.local.set({ largeData: 'x'.repeat(1000000) }))
-        .rejects.toThrow('Quota exceeded');
+      await clickHandler(
+        { menuItemId: 'genai-summarize-selection', selectionText: 'text' },
+        { id: 1 }
+      );
+
+      expect(chrome.notifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('Failed to fetch') })
+      );
+    });
+
+    it('ignores menu ids it does not own', async () => {
+      const clickHandler = chrome.contextMenus.onClicked.addListener.mock.calls[0][0];
+      await clickHandler({ menuItemId: 'some-other-extension-item' }, { id: 1 });
+
+      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 });
