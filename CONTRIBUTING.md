@@ -44,59 +44,64 @@
    npm ci
    npm run prepare
    ```
-3. Run in development mode:
-   ```bash
-   npm run dev:extension
-   ```
-4. Load the unpacked extension from the project root at `chrome://extensions`.
-5. Write tests and ensure all checks pass (see below), then open a PR.
+3. Load the unpacked extension from the **project root** at `chrome://extensions`.
+   No build step is needed — the manifest points at the source files.
+4. Write tests, run `npm run verify`, then open a PR.
 
 ## Development Setup
 
 ### Prerequisites
 - Node.js >= 18, npm >= 9
-- Chrome/Edge >= 88 (for MV3), Firefox (limited MV3)
-- Git, VS Code (recommended)
+- Chrome >= 116 (MV3 service worker modules)
+- Git
 
-### Environment configuration
-```bash
-cp .env.example .env
-# Configure provider keys as needed (also configurable in Options UI)
-```
+### Configuration
+
+There is no `.env` file. Provider selection, API keys, and model overrides all
+live on the extension's options page and are stored in `chrome.storage.sync`.
 
 ### Common scripts
 ```bash
-npm run dev:extension   # Watch build for extension
-npm run build:extension # Production build (Rollup MV3 bundle)
-npm run test            # Unit tests (Vitest)
-npm run test:e2e        # Playwright E2E
-npm run lint            # ESLint + security rules
-npm run typecheck       # TypeScript type checks
-npm run format          # Prettier formatting
+npm run verify   # lint + typecheck + test — run before every PR
+npm test         # Unit and integration tests (Vitest)
+npm run test:e2e # Playwright E2E
+npm run lint     # ESLint
+npm run typecheck# tsc --noEmit over shipped source (must be zero errors)
+npm run format   # Prettier
+npm run build    # Bundle to dist/ for packaging
+npm run dev      # Rollup watch (only to test bundled output)
 ```
 
 ## Project Structure
 
 ```
 GenAI-Browser-Tool/
-├── background.js          # MV3 service worker
-├── content.js             # content script injected in pages
-├── popup.html/css/js      # popup UI
-├── options.html/css/js    # settings UI
-├── core/                  # core orchestration
-│   ├── ai-provider-orchestrator.js
-│   └── configuration-manager.js
-├── providers/             # AI provider adapters
-│   ├── openai-provider.js
-│   ├── claude-provider.js         (add as needed)
-│   ├── gemini-provider.js         (add as needed)
-│   └── chrome-ai-provider.js      (add as needed)
-├── services/              # utilities: cache, security, extractors
-├── utils/                 # helpers
-├── tests/                 # unit/e2e tests
-├── docs/                  # additional docs
-└── manifest.json          # MV3 manifest
+├── background.js            # MV3 service worker — message router, all AI calls
+├── content.js               # content script, read-only DOM extraction
+├── popup.html               # popup markup (logic in scripts/popup-main.js)
+├── options.html/.css/.js    # settings UI
+├── core/
+│   ├── configuration-manager.js  # settings + AI client construction
+│   └── tasks.js                  # prompt construction and response parsing
+├── providers/
+│   └── ai-client.js              # one fetch client, shaped per provider
+├── scripts/popup-main.js    # popup logic
+├── services/                # storage, notifications
+├── src/utils/               # validation
+├── utils/logger.js
+├── styles/                  # popup CSS
+├── tests/                   # unit, integration, and e2e tests
+├── docs/                    # DEVELOPMENT.md, SECURITY.md
+└── manifest.json            # MV3 manifest
 ```
+
+### Adding a provider
+
+Add one entry to `PROVIDERS` in `providers/ai-client.js` (url, headers, body,
+parse), add its host to `host_permissions` in `manifest.json`, and add the key
+and model inputs to `options.html`. Everything else — options wiring, status
+badge, and all seven tasks — picks it up automatically. Add request-shaping
+tests alongside the existing ones in `tests/providers/ai-client.test.js`.
 
 ## Branching Model
 
@@ -273,7 +278,7 @@ We use SemVer and align `manifest.json` version with `package.json`.
 Steps:
 1. Update versions: `npm version patch|minor|major`
 2. Update CHANGELOG.md
-3. Build and smoke test: `npm run build:extension`
+3. Build and smoke test: `npm run verify && npm run build`
 4. Tag and push: `git push --follow-tags`
 5. Create GitHub release
 6. Submit to Chrome Web Store / Edge Add‑ons
