@@ -16,6 +16,8 @@ class PopupInterface {
     this.isProcessing = false;
     this.lastSummary = null;
     this.lastTranslation = null;
+    /** @type {any} */
+    this.preferences = null;
 
     this.initialize();
   }
@@ -23,11 +25,43 @@ class PopupInterface {
   async initialize() {
     this.setupEventListeners();
     try {
+      await this.applyPreferences();
       await this.updateProviderStatus();
       await this.extractCurrentPageContent();
     } finally {
       this.hideLoading();
     }
+  }
+
+  /**
+   * Seed the controls from saved settings.
+   *
+   * Without this the options page's summary style, length, language, and theme
+   * are stored but never applied, so changing them appears to do nothing.
+   */
+  async applyPreferences() {
+    const response = await this.send('GET_USER_PREFERENCES', {});
+    if (!response.success) return;
+
+    this.preferences = response.data;
+    setValue('summary-type', this.preferences.summaryType);
+    setValue('target-language', this.preferences.targetLanguage);
+
+    const length = /** @type {HTMLInputElement | null} */ (
+      document.querySelector(
+        `input[name="summary-length"][value="${this.preferences.summaryLength}"]`
+      )
+    );
+    if (length) length.checked = true;
+
+    if (this.preferences.theme === 'dark') {
+      document.body.classList.add('dark-theme');
+    }
+  }
+
+  async toggleTheme() {
+    const isDark = document.body.classList.toggle('dark-theme');
+    await this.send('UPDATE_USER_PREFERENCES', { theme: isDark ? 'dark' : 'light' });
   }
 
   setupEventListeners() {
@@ -39,7 +73,7 @@ class PopupInterface {
     });
 
     on('settings-btn', 'click', () => chrome.runtime.openOptionsPage());
-    on('theme-toggle', 'click', () => document.body.classList.toggle('dark-theme'));
+    on('theme-toggle', 'click', () => this.toggleTheme());
 
     on('generate-summary-btn', 'click', () => this.generateSummary());
     on('copy-summary-btn', 'click', () => this.copyToClipboard('summary-content'));
@@ -126,10 +160,7 @@ class PopupInterface {
       this.lastSummary = response.data;
       setHtml('summary-content', renderMarkdown(response.data.summary));
       setText('summary-provider', `${response.data.provider} · ${response.data.model}`);
-      setText(
-        'summary-confidence',
-        response.data.truncated ? 'Long page — summarized from the first section only' : ''
-      );
+      setText('summary-confidence', describeCoverage(response.data));
       show('summary-results');
     });
   }
@@ -170,7 +201,8 @@ class PopupInterface {
         text: translateWholePage
           ? this.pageContent.mainText
           : this.pageContent.mainText.slice(0, 2000),
-        targetLanguage: value('target-language') || 'en'
+        targetLanguage: value('target-language') || 'en',
+        sourceLanguage: value('source-language') || 'auto'
       });
 
       if (!response.success) throw new Error(response.error);
@@ -500,6 +532,29 @@ export function renderMarkdown(text) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/`(.+?)`/g, '<code>$1</code>')
     .replace(/\n/g, '<br>');
+}
+
+/**
+ * Say how much of the page the summary actually covers.
+ *
+ * A summary of a 200,000-character page that silently used the first 24,000 is
+ * indistinguishable from a complete one, so coverage is always stated.
+ *
+ * @param {{ sections?: number, droppedChars?: number }} data
+ * @returns {string}
+ */
+export function describeCoverage(data) {
+  const sections = data.sections || 1;
+  const dropped = data.droppedChars || 0;
+
+  if (dropped > 0) {
+    return `Very long page — summarized the first ${sections} sections, ` +
+      `${dropped.toLocaleString()} characters not included`;
+  }
+  if (sections > 1) {
+    return `Whole page, summarized across ${sections} sections`;
+  }
+  return 'Whole page';
 }
 
 /** @param {string} text @returns {number} */
