@@ -90,6 +90,46 @@ describe('Extension workflow', () => {
       );
     });
 
+    it('summarizes a long page as sections plus one merge, not a truncation', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+
+      // Three chunks' worth of paragraphs.
+      const longPage = Array.from({ length: 80 }, (_, i) =>
+        `Paragraph ${i}. ${'word '.repeat(180)}`
+      ).join('\n\n');
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', {
+        content: longPage,
+        summaryType: 'key-points'
+      });
+
+      expect(response.success).toBe(true);
+      expect(response.data.sections).toBeGreaterThan(1);
+      expect(response.data.droppedChars).toBe(0);
+      expect(response.data.truncated).toBe(false);
+
+      // One request per section, plus a final merge.
+      expect(global.fetch).toHaveBeenCalledTimes(response.data.sections + 1);
+
+      const bodies = global.fetch.mock.calls.map(call => JSON.parse(call[1].body));
+      const mapCalls = bodies.filter(b => b.system.includes('You are reading section'));
+      const reduceCalls = bodies.filter(b => b.system.includes('You are given ordered notes'));
+      expect(mapCalls).toHaveLength(response.data.sections);
+      expect(reduceCalls).toHaveLength(1);
+
+      // The merge step reads our own notes, so it is not fenced as untrusted.
+      expect(reduceCalls[0].messages[0].content).not.toContain('<<<PAGE_CONTENT>>>');
+    });
+
+    it('still issues exactly one call for a page that fits', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', { content: 'A short article.' });
+
+      expect(response.data.sections).toBe(1);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects empty content before spending an API call', async () => {
       global.fetch.mockResolvedValue(CLAUDE_REPLY);
 

@@ -220,6 +220,46 @@ test.describe('summarization end to end', () => {
     expect(requestBodies[0]).toContain('Service workers run separately');
   });
 
+  test('a page too long for one request is summarized in sections', async ({
+    context,
+    extensionId
+  }) => {
+    let callCount = 0;
+    await context.route('https://api.anthropic.com/**', route => {
+      callCount += 1;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ content: [{ type: 'text', text: '- a point' }] })
+      });
+    });
+
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await seedPreferences(popup, CONFIGURED_PREFERENCES);
+
+    // ~3 chunks worth of real paragraphs.
+    const longPage = Array.from(
+      { length: 80 },
+      (_, i) => `Paragraph ${i}. ${'word '.repeat(180)}`
+    ).join('\n\n');
+
+    const response = await popup.evaluate(
+      content =>
+        chrome.runtime.sendMessage({
+          actionType: 'GENERATE_CONTENT_SUMMARY',
+          payload: { content }
+        }),
+      longPage
+    );
+
+    expect(response.success).toBe(true);
+    expect(response.data.sections).toBeGreaterThan(1);
+    expect(response.data.droppedChars).toBe(0);
+    // One request per section plus the merge.
+    expect(callCount).toBe(response.data.sections + 1);
+  });
+
   test('a right-click page summary notifies the user', async ({ context, extensionId }) => {
     await stubProvider(context, '- Service workers have no DOM access');
 

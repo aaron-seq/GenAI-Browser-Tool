@@ -5,7 +5,13 @@
  */
 
 import { ConfigurationManager } from './core/configuration-manager.js';
-import { buildPrompt, parseSentiment, parseTags, wasTruncated } from './core/tasks.js';
+import {
+  buildPrompt,
+  chunkContent,
+  parseSentiment,
+  parseTags,
+  wasTruncated
+} from './core/tasks.js';
 import { AIError } from './providers/ai-client.js';
 import { StorageService } from './services/storage-service.js';
 import { NotificationManager } from './services/notification-manager.js';
@@ -183,26 +189,95 @@ class BackgroundService {
     };
   }
 
-  /** @param {any} payload */
+  /**
+   * Summarize a page, splitting it across requests when it is too long for one.
+   *
+   * @param {any} payload
+   */
   async summarize(payload) {
-    const result = await this.runTask('summary', payload);
+    const content = (payload.content || '').trim();
+    if (!content) {
+      throw new AIError('NO_CONTENT', 'No page content available for this action');
+    }
+
+    const client = await this.configManager.createAIClient();
+    const { chunks, droppedChars } = chunkContent(content);
+
+    const result = chunks.length > 1
+      ? await this.summarizeInChunks(client, chunks, payload)
+      : { text: await this.completeTask(client, 'summary', { ...payload, content }) };
 
     await this.storageService.saveSummaryHistory({
-      originalContent: payload.content.slice(0, 500),
+      originalContent: content.slice(0, 500),
       summary: result.text,
       options: { type: payload.summaryType, length: payload.targetLength },
-      provider: result.provider,
+      provider: client.provider,
       timestamp: Date.now()
     });
 
     return {
-      ...result,
+      text: result.text,
       summary: result.text,
+      provider: client.provider,
+      model: client.model,
+      sections: chunks.length,
+      droppedChars,
+      truncated: droppedChars > 0,
       stats: {
-        inputLength: payload.content.length,
+        inputLength: content.length,
         outputLength: result.text.length
       }
     };
+  }
+
+  /**
+   * Map-reduce over a long page: summarize each section, then merge the notes.
+   *
+   * Sections run concurrently — a nine-request sequential chain would take most
+   * of a minute, and the popup is a foreground UI. A rate-limit rejection on any
+   * section fails the whole summary with the provider's own message, which is
+   * the honest outcome; a partial summary presented as complete is not.
+   *
+   * @param {import('./providers/ai-client.js').AIClient} client
+   * @param {string[]} chunks
+   * @param {any} payload
+   * @returns {Promise<{ text: string }>}
+   */
+  async summarizeInChunks(client, chunks, payload) {
+    this.logger.info(`Summarizing ${chunks.length} sections`);
+
+    const notes = await Promise.all(
+      chunks.map((chunk, index) =>
+        this.completeTask(client, 'summary-chunk', {
+          content: chunk,
+          index,
+          total: chunks.length
+        })
+      )
+    );
+
+    const text = await this.completeTask(client, 'summary-reduce', {
+      notes: notes.map((note, i) => `Section ${i + 1}:\n${note}`).join('\n\n'),
+      total: chunks.length,
+      title: payload.title,
+      summaryType: payload.summaryType,
+      targetLength: payload.targetLength
+    });
+
+    return { text };
+  }
+
+  /**
+   * Build a prompt and run it against an already-constructed client.
+   *
+   * @param {import('./providers/ai-client.js').AIClient} client
+   * @param {string} task
+   * @param {any} payload
+   * @returns {Promise<string>}
+   */
+  completeTask(client, task, payload) {
+    const prompt = buildPrompt(task, payload);
+    return client.complete(prompt.system, prompt.user, prompt.maxTokens);
   }
 
   /** @param {any} payload */

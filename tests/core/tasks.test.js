@@ -3,10 +3,26 @@ import {
   buildPrompt,
   fenceContent,
   wasTruncated,
+  chunkContent,
   parseSentiment,
   parseTags,
-  MAX_CONTENT_CHARS
+  MAX_CONTENT_CHARS,
+  MAX_CHUNKS
 } from '../../core/tasks.js';
+
+/**
+ * Build text of roughly `chars` characters made of separate paragraphs, so the
+ * chunker has real boundaries to split on.
+ *
+ * @param {number} chars
+ * @param {number} [paragraphLength]
+ */
+function paragraphs(chars, paragraphLength = 1000) {
+  const count = Math.ceil(chars / paragraphLength);
+  return Array.from({ length: count }, (_, i) =>
+    `Paragraph ${i}. ${'word '.repeat(Math.floor(paragraphLength / 5))}`
+  ).join('\n\n');
+}
 
 describe('tasks', () => {
   describe('content fencing', () => {
@@ -28,6 +44,135 @@ describe('tasks', () => {
     it('leaves content under the cap untouched', () => {
       expect(wasTruncated('short')).toBe(false);
       expect(fenceContent('short')).not.toContain('truncated');
+    });
+  });
+
+  describe('chunkContent', () => {
+    it('returns a single chunk for content that already fits', () => {
+      const { chunks, droppedChars } = chunkContent('short text');
+      expect(chunks).toEqual(['short text']);
+      expect(droppedChars).toBe(0);
+    });
+
+    it('returns no chunks for empty content', () => {
+      expect(chunkContent('   ').chunks).toEqual([]);
+    });
+
+    it('splits long content into chunks that each fit one request', () => {
+      const { chunks, droppedChars } = chunkContent(paragraphs(MAX_CONTENT_CHARS * 3));
+
+      expect(chunks.length).toBeGreaterThan(1);
+      expect(droppedChars).toBe(0);
+      for (const chunk of chunks) {
+        expect(chunk.length).toBeLessThanOrEqual(MAX_CONTENT_CHARS);
+      }
+    });
+
+    it('splits on paragraph boundaries rather than mid-sentence', () => {
+      const { chunks } = chunkContent(paragraphs(MAX_CONTENT_CHARS * 2));
+
+      // Every chunk should start at the beginning of some paragraph.
+      for (const chunk of chunks) {
+        expect(chunk.trimStart()).toMatch(/^Paragraph \d+\./);
+      }
+    });
+
+    it('loses no content when splitting', () => {
+      const source = paragraphs(MAX_CONTENT_CHARS * 2);
+      const { chunks } = chunkContent(source);
+
+      const rejoined = chunks.join('\n\n').replace(/\s+/g, ' ').trim();
+      const original = source.replace(/\s+/g, ' ').trim();
+      expect(rejoined).toBe(original);
+    });
+
+    it('hard-splits a single paragraph longer than the limit', () => {
+      const oneHugeParagraph = 'x'.repeat(MAX_CONTENT_CHARS * 2 + 10);
+      const { chunks } = chunkContent(oneHugeParagraph);
+
+      expect(chunks.length).toBe(3);
+      for (const chunk of chunks) {
+        expect(chunk.length).toBeLessThanOrEqual(MAX_CONTENT_CHARS);
+      }
+    });
+
+    it('caps the chunk count and reports how much it dropped', () => {
+      const huge = paragraphs(MAX_CONTENT_CHARS * (MAX_CHUNKS + 4));
+      const { chunks, droppedChars } = chunkContent(huge);
+
+      // Bounds the cost of one Summarize click.
+      expect(chunks).toHaveLength(MAX_CHUNKS);
+      expect(droppedChars).toBeGreaterThan(0);
+    });
+
+    it('honours explicit limits', () => {
+      const { chunks, droppedChars } = chunkContent('aaaa\n\nbbbb\n\ncccc', 5, 2);
+      expect(chunks).toEqual(['aaaa', 'bbbb']);
+      expect(droppedChars).toBe(4);
+    });
+  });
+
+  describe('map-reduce prompts', () => {
+    it('tells the map step which section it is reading', () => {
+      const prompt = buildPrompt('summary-chunk', { content: 'text', index: 2, total: 5 });
+
+      expect(prompt.system).toContain('section 3 of 5');
+      expect(prompt.user).toContain('<<<PAGE_CONTENT>>>');
+    });
+
+    it('asks the map step not to write a conclusion', () => {
+      const prompt = buildPrompt('summary-chunk', { content: 'text', index: 0, total: 3 });
+      expect(prompt.system).toMatch(/later sections follow/i);
+    });
+
+    it('does not fence the reduce input, which is our own output', () => {
+      const prompt = buildPrompt('summary-reduce', {
+        notes: 'Section 1:\n- a point',
+        total: 2,
+        title: 'An Article'
+      });
+
+      expect(prompt.user).not.toContain('<<<PAGE_CONTENT>>>');
+      expect(prompt.user).toContain('- a point');
+      expect(prompt.user).toContain('An Article');
+    });
+
+    it('hides the sectioning from the final summary', () => {
+      const prompt = buildPrompt('summary-reduce', { notes: 'notes', total: 3 });
+      expect(prompt.system).toMatch(/do not mention the sections/i);
+    });
+
+    it('applies the requested style and length to the reduce step', () => {
+      const tldr = buildPrompt('summary-reduce', {
+        notes: 'n',
+        total: 2,
+        summaryType: 'tldr',
+        targetLength: 'short'
+      });
+      const long = buildPrompt('summary-reduce', { notes: 'n', total: 2, targetLength: 'long' });
+
+      expect(tldr.system).toContain('TL;DR');
+      expect(long.maxTokens).toBeGreaterThan(tldr.maxTokens);
+    });
+  });
+
+  describe('translation source language', () => {
+    it('names the source language when one is chosen', () => {
+      const prompt = buildPrompt('translation', {
+        text: 'bonjour',
+        sourceLanguage: 'French',
+        targetLanguage: 'English'
+      });
+      expect(prompt.system).toContain('from French');
+    });
+
+    it('omits the source when set to auto', () => {
+      const prompt = buildPrompt('translation', {
+        text: 'bonjour',
+        sourceLanguage: 'auto',
+        targetLanguage: 'English'
+      });
+      expect(prompt.system).not.toContain('from auto');
     });
   });
 
