@@ -19,6 +19,12 @@ import { ValidationService } from './src/utils/validation-service.js';
 import { Logger } from './utils/logger.js';
 
 /**
+ * Sections summarized at once. Low enough to stay under typical per-minute
+ * request limits, high enough that a long page does not feel serial.
+ */
+const SECTION_CONCURRENCY = 3;
+
+/**
  * Context menu id -> the task it runs and where its input comes from.
  * @type {Record<string, { task: string, source: 'selection' | 'page', title: string }>}
  */
@@ -233,10 +239,14 @@ class BackgroundService {
   /**
    * Map-reduce over a long page: summarize each section, then merge the notes.
    *
-   * Sections run concurrently — a nine-request sequential chain would take most
-   * of a minute, and the popup is a foreground UI. A rate-limit rejection on any
-   * section fails the whole summary with the provider's own message, which is
-   * the honest outcome; a partial summary presented as complete is not.
+   * Sections run a few at a time rather than all at once. Fully sequential
+   * would take most of a minute in a foreground popup; all eight at once is a
+   * reliable way to trip the per-minute rate limit and fail the very long pages
+   * this exists for. Individual requests retry transient failures themselves.
+   *
+   * A section that still fails after retries fails the whole summary, with the
+   * provider's own message. A partial summary presented as complete would be
+   * worse than an error.
    *
    * @param {import('./providers/ai-client.js').AIClient} client
    * @param {string[]} chunks
@@ -246,14 +256,12 @@ class BackgroundService {
   async summarizeInChunks(client, chunks, payload) {
     this.logger.info(`Summarizing ${chunks.length} sections`);
 
-    const notes = await Promise.all(
-      chunks.map((chunk, index) =>
-        this.completeTask(client, 'summary-chunk', {
-          content: chunk,
-          index,
-          total: chunks.length
-        })
-      )
+    const notes = await mapWithConcurrency(chunks, SECTION_CONCURRENCY, (chunk, index) =>
+      this.completeTask(client, 'summary-chunk', {
+        content: chunk,
+        index,
+        total: chunks.length
+      })
     );
 
     const text = await this.completeTask(client, 'summary-reduce', {
@@ -413,6 +421,31 @@ class BackgroundService {
  */
 function truncateForNotification(text) {
   return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+}
+
+/**
+ * Map over items with at most `limit` promises in flight, preserving order.
+ *
+ * @template T, R
+ * @param {T[]} items
+ * @param {number} limit
+ * @param {(item: T, index: number) => Promise<R>} fn
+ * @returns {Promise<R[]>}
+ */
+export async function mapWithConcurrency(items, limit, fn) {
+  /** @type {R[]} */
+  const results = new Array(items.length);
+  let next = 0;
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(/** @type {T} */ (items[index]), index);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 }
 
 new BackgroundService();

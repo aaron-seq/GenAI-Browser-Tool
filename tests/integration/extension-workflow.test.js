@@ -34,14 +34,22 @@ const CONFIGURED = {
  * @param {any} payload
  * @returns {Promise<any>}
  */
-function dispatch(actionType, payload) {
+/**
+ * @param {string} actionType
+ * @param {any} payload
+ * @param {number} [timeout]  Raise when the path under test exhausts retries.
+ */
+function dispatch(actionType, payload, timeout = 1000) {
   const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
   const sendResponse = vi.fn();
   handler({ actionType, requestId: 'req-1', payload }, { id: 'mock-extension-id' }, sendResponse);
-  return vi.waitFor(() => {
-    expect(sendResponse).toHaveBeenCalled();
-    return sendResponse.mock.calls[0][0];
-  });
+  return vi.waitFor(
+    () => {
+      expect(sendResponse).toHaveBeenCalled();
+      return sendResponse.mock.calls[0][0];
+    },
+    { timeout }
+  );
 }
 
 describe('Extension workflow', () => {
@@ -152,18 +160,46 @@ describe('Extension workflow', () => {
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    it('surfaces a provider failure rather than a plausible fake answer', async () => {
+    it('retries a rate limit, then surfaces it rather than a fake answer', async () => {
       global.fetch.mockResolvedValue({
         ok: false,
         status: 429,
         statusText: 'Too Many Requests',
+        headers: { get: () => null },
         json: vi.fn().mockResolvedValue({ error: { message: 'rate limit exceeded' } })
       });
 
-      const response = await dispatch('GENERATE_CONTENT_SUMMARY', { content: 'article text' });
+      const response = await dispatch(
+        'GENERATE_CONTENT_SUMMARY',
+        { content: 'article text' },
+        10000
+      );
 
       expect(response.success).toBe(false);
       expect(response.error).toContain('rate limit exceeded');
+      // Retried before giving up, rather than failing on the first 429.
+      expect(global.fetch.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it('recovers from a transient rate limit without the user seeing it', async () => {
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          statusText: 'Too Many Requests',
+          headers: { get: () => null },
+          json: vi.fn().mockResolvedValue({ error: { message: 'slow down' } })
+        })
+        .mockResolvedValue(CLAUDE_REPLY);
+
+      const response = await dispatch(
+        'GENERATE_CONTENT_SUMMARY',
+        { content: 'article text' },
+        10000
+      );
+
+      expect(response.success).toBe(true);
+      expect(response.data.summary).toBe('- point one\n- point two');
     });
   });
 
