@@ -18,6 +18,7 @@ class PopupInterface {
     this.lastTranslation = null;
     /** @type {any} */
     this.preferences = null;
+    this.warnedAboutChatTruncation = false;
 
     this.initialize();
   }
@@ -185,6 +186,17 @@ class PopupInterface {
       }
 
       this.addChatMessage('assistant', response.data.answer);
+
+      // Chat sends a single request, so a long page is answered from its first
+      // section only. Saying so once beats letting the answer look exhaustive.
+      if (response.data.truncated && !this.warnedAboutChatTruncation) {
+        this.warnedAboutChatTruncation = true;
+        this.addChatMessage(
+          'assistant',
+          '_Note: this page is long, so answers use only its first section._'
+        );
+      }
+
       this.conversationHistory.push(
         { role: 'user', content: question },
         { role: 'assistant', content: response.data.answer }
