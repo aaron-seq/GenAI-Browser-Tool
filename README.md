@@ -43,8 +43,28 @@ it achieved:
 | `Whole page, summarized across 4 sections` | Split, nothing dropped |
 | `Very long page — summarized the first 8 sections, 51,000 characters not included` | Hit the cap |
 
+Sections are summarized a few at a time rather than all at once — eight
+simultaneous requests is a reliable way to trip a per-minute rate limit and fail
+the very long pages the feature exists for.
+
 Chat, translation, and the analysis actions still use a single request and
-truncate at 24,000 characters.
+truncate at 24,000 characters. Chat says so in the thread the first time it
+happens, so an answer drawn from part of a page never looks exhaustive.
+
+### When a request fails
+
+Transient failures — `429`, `500`, `502`, `503`, `504`, `529`, and network blips
+— are retried twice with exponential backoff and jitter, honouring the
+provider's `Retry-After` header when it sends one.
+
+Errors that mean *this request is wrong* are **not** retried: `400`, `401`,
+`403`, `404`. Retrying those burns quota and delays the message you need to see.
+Timeouts are not retried either, since the request may still be running on the
+provider's side and a retry risks paying for the same work twice.
+
+If a section still fails after retries, the whole summary fails with the
+provider's own message. A partial summary presented as complete would be worse
+than an error.
 
 ### What it deliberately does not do
 
@@ -197,7 +217,7 @@ page requires reading it. It has no network access of its own.
 | "No API key configured" | Open the options page and add a key for the selected provider |
 | "Cannot read this page" | Content scripts cannot run on `chrome://` pages, the Chrome Web Store, or PDFs |
 | "returned 401" | The key is wrong, revoked, or belongs to a different provider |
-| "returned 429" | You hit the provider's rate limit |
+| "returned 429" | Rate limit, still hit after two retries — wait, or lower the request rate |
 | "…characters not included" | Page exceeded the 8-section cap; see [Long pages](#long-pages) |
 | A long page costs several requests | Expected — one per section plus one merge |
 | Popup unchanged after an edit | Reload the extension at `chrome://extensions`, then reopen the popup |
