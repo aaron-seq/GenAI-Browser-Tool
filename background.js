@@ -1,454 +1,343 @@
 /**
  * @file background.js
- * @description Enhanced service worker for GenAI Browser Assistant
- * @version 4.0.0
+ * @description Service worker: routes UI requests to the configured AI provider.
+ * @version 5.0.0
  */
 
 import { ConfigurationManager } from './core/configuration-manager.js';
-import { AIProviderOrchestrator } from './core/ai-provider-orchestrator.js';
-import { ContentExtractor } from './services/content-extractor.js';
+import { buildPrompt, parseSentiment, parseTags, wasTruncated } from './core/tasks.js';
+import { AIError } from './providers/ai-client.js';
 import { StorageService } from './services/storage-service.js';
 import { NotificationManager } from './services/notification-manager.js';
-import { AnalyticsTracker } from './services/analytics-tracker.js';
 import { ValidationService } from './src/utils/validation-service.js';
-import { ErrorHandler } from './src/utils/error-handler.js';
 import { Logger } from './utils/logger.js';
 
-class BackgroundServiceOrchestrator {
+/**
+ * Context menu id -> the task it runs and where its input comes from.
+ * @type {Record<string, { task: string, source: 'selection' | 'page', title: string }>}
+ */
+const CONTEXT_MENU_TASKS = {
+  'genai-summarize-selection': { task: 'summary', source: 'selection', title: 'Summary' },
+  'genai-explain-selection': { task: 'insights', source: 'selection', title: 'Key points' },
+  'genai-translate-selection': { task: 'translation', source: 'selection', title: 'Translation' },
+  'genai-analyze-sentiment': { task: 'sentiment', source: 'selection', title: 'Sentiment' },
+  'genai-summarize-page': { task: 'summary', source: 'page', title: 'Page summary' },
+  'genai-extract-insights': { task: 'insights', source: 'page', title: 'Key insights' },
+  'genai-generate-tags': { task: 'tags', source: 'page', title: 'Smart tags' }
+};
+
+class BackgroundService {
   constructor() {
     this.logger = new Logger('BackgroundService');
     this.configManager = new ConfigurationManager();
-    this.aiOrchestrator = new AIProviderOrchestrator();
-    this.contentExtractor = new ContentExtractor();
     this.storageService = new StorageService();
     this.notificationManager = new NotificationManager();
-    this.analyticsTracker = new AnalyticsTracker();
-    this.securityValidator = new ValidationService();
-    this.errorHandler = new ErrorHandler();
-    
-    this.isInitialized = false;
-    this.initializeService();
+    this.validator = new ValidationService();
+
+    this.registerListeners();
+    this.initialize();
   }
 
-  async initializeService() {
+  async initialize() {
     try {
-      this.logger.info('Initializing GenAI Browser Assistant...');
-      
       await this.configManager.initialize();
-      await this.setupEventListeners();
       await this.createContextMenus();
-      await this.setupPeriodicTasks();
-      
-      this.isInitialized = true;
-      this.logger.info('Service initialization completed successfully');
+      this.logger.info('Service initialized');
     } catch (error) {
       /** @type {any} */
       const err = error;
-      this.errorHandler.handleCriticalError(err, 'Service initialization failed');
+      this.logger.error('Service initialization failed', err.message);
     }
   }
 
-  async setupEventListeners() {
-    // Installation and update handling
-    chrome.runtime.onInstalled.addListener(this.handleInstallation.bind(this));
-    
-    // Message handling with improved error handling
+  /**
+   * Listeners are registered synchronously at worker start. Registering them
+   * inside an async initializer loses events fired while the worker is waking.
+   */
+  registerListeners() {
+    chrome.runtime.onInstalled.addListener(this.handleInstalled.bind(this));
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      this.handleIncomingMessage(message, sender, sendResponse);
-      return true; // Keep message channel open for async responses
+      this.handleMessage(message, sender, sendResponse);
+      return true; // async sendResponse
     });
-
-    // Context menu interactions
-    chrome.contextMenus.onClicked.addListener(this.handleContextMenuAction.bind(this));
-    
-    // Keyboard shortcuts
-    chrome.commands.onCommand.addListener(this.handleKeyboardCommand.bind(this));
-    
-    // Tab lifecycle events
-    chrome.tabs.onUpdated.addListener(this.handleTabUpdate.bind(this));
-    chrome.tabs.onActivated.addListener(this.handleTabActivation.bind(this));
-    
-    // Storage changes
-    chrome.storage.onChanged.addListener(this.handleStorageChange.bind(this));
+    chrome.contextMenus.onClicked.addListener(this.handleContextMenu.bind(this));
+    chrome.commands.onCommand.addListener(this.handleCommand.bind(this));
+    chrome.alarms.onAlarm.addListener(this.handleAlarm.bind(this));
+    chrome.alarms.create('cleanupOldData', { periodInMinutes: 1440 });
   }
 
-  /** 
-   * @param {any} message 
-   * @param {chrome.runtime.MessageSender} sender 
-   * @param {function} sendResponse 
+  // ---------------------------------------------------------------- messaging
+
+  /**
+   * @param {any} message
+   * @param {chrome.runtime.MessageSender} sender
+   * @param {(response: any) => void} sendResponse
    */
-  async handleIncomingMessage(message, sender, sendResponse) {
-    const startTime = performance.now();
-    
+  async handleMessage(message, sender, sendResponse) {
+    const startTime = Date.now();
+    const requestId = message?.requestId;
+
     try {
-      // Security validation
-      if (!this.securityValidator.validateMessage(message, sender)) {
-        throw new Error('Invalid message or sender');
+      if (!this.validator.validateMessage(message, sender)) {
+        throw new AIError('INVALID_MESSAGE', 'Malformed message or unknown sender');
       }
 
-      const { actionType, requestId, payload } = message;
-      // @ts-ignore - logger context type mismatch
-      this.logger.debug(`Processing action: ${actionType}`, { requestId });
-
-      let responseData;
-      
-      switch (actionType) {
-        case 'GENERATE_CONTENT_SUMMARY':
-          responseData = await this.processContentSummary(payload);
-          break;
-          
-        case 'ANSWER_CONTEXTUAL_QUESTION':
-          responseData = await this.processContextualQuestion(payload);
-          break;
-          
-        case 'TRANSLATE_CONTENT':
-          responseData = await this.processContentTranslation(payload);
-          break;
-          
-        case 'ANALYZE_SENTIMENT':
-          responseData = await this.processSentimentAnalysis(payload);
-          break;
-          
-        case 'EXTRACT_PAGE_CONTENT':
-          // @ts-ignore - tab id check
-          responseData = await this.extractPageContent(sender.tab?.id || 0, payload);
-          break;
-          
-        case 'SAVE_SMART_BOOKMARK':
-          responseData = await this.createIntelligentBookmark(payload);
-          break;
-          
-        case 'GET_USER_PREFERENCES':
-          responseData = await this.configManager.getUserPreferences();
-          break;
-          
-        case 'UPDATE_USER_PREFERENCES':
-          responseData = await this.configManager.updateUserPreferences(payload);
-          break;
-          
-        case 'EXPORT_USER_DATA':
-          responseData = await this.exportUserData(payload);
-          break;
-          
-        case 'IMPORT_USER_DATA':
-          responseData = await this.importUserData(payload);
-          break;
-          
-        default:
-          throw new Error(`Unsupported action type: ${actionType}`);
-      }
-
-      const processingTime = performance.now() - startTime;
-      // @ts-ignore - stub method
-      this.analyticsTracker.trackActionPerformance(actionType, processingTime);
-
-      sendResponse({
-        success: true,
-        data: responseData,
-        requestId,
-        processingTime: Math.round(processingTime)
-      });
-
+      const data = await this.route(message.actionType, message.payload || {}, sender);
+      sendResponse({ success: true, data, requestId, processingTime: Date.now() - startTime });
     } catch (error) {
       /** @type {any} */
       const err = error;
-      
-      const processingTime = performance.now() - startTime;
-      this.errorHandler.handleError(err, 'Message processing failed', {
-        action: message.actionType,
-        requestId: message.requestId,
-        processingTime
-      });
-
+      this.logger.error(`Action ${message?.actionType} failed`, err.message);
       sendResponse({
         success: false,
         error: err.message,
         errorCode: err.code || 'UNKNOWN_ERROR',
-        requestId: message.requestId,
-        processingTime: Math.round(processingTime)
+        requestId,
+        processingTime: Date.now() - startTime
       });
     }
   }
 
-  /** @param {any} payload */
-  async processContentSummary(payload) {
-    const { content, summaryType, targetLength, customPrompt } = payload;
-    
-    if (!content || content.trim().length === 0) {
-      throw new Error('No content provided for summarization');
+  /**
+   * @param {string} actionType
+   * @param {any} payload
+   * @param {chrome.runtime.MessageSender} sender
+   * @returns {Promise<any>}
+   */
+  async route(actionType, payload, sender) {
+    switch (actionType) {
+      case 'GENERATE_CONTENT_SUMMARY':
+        return this.summarize(payload);
+
+      case 'ANSWER_CONTEXTUAL_QUESTION':
+        return this.answerQuestion(payload);
+
+      case 'TRANSLATE_CONTENT':
+        return this.runTask('translation', { ...payload, content: payload.text });
+
+      case 'ANALYZE_SENTIMENT': {
+        const result = await this.runTask('sentiment', { ...payload, content: payload.text });
+        return { ...result, ...parseSentiment(result.text) };
+      }
+
+      case 'EXTRACT_KEY_INSIGHTS':
+        return this.runTask('insights', { ...payload, content: payload.text });
+
+      case 'GENERATE_SMART_TAGS': {
+        const result = await this.runTask('tags', { ...payload, content: payload.text });
+        return { ...result, tags: parseTags(result.text) };
+      }
+
+      case 'EXTRACT_ENTITIES':
+        return this.runTask('entities', { ...payload, content: payload.text });
+
+      case 'EXTRACT_PAGE_CONTENT':
+        // The popup has no `sender.tab`, so it passes the id it queried itself.
+        // Reading only `sender.tab.id` made every popup-initiated extraction fail.
+        return this.extractPageContent(payload.tabId ?? sender.tab?.id);
+
+      case 'GET_USER_PREFERENCES':
+        return this.configManager.getUserPreferences();
+
+      case 'UPDATE_USER_PREFERENCES':
+        return this.configManager.updateUserPreferences(payload);
+
+      case 'GET_PROVIDER_STATUS':
+        return this.configManager.getProviderStatus();
+
+      case 'GET_HISTORY':
+        return this.storageService.getAnalysisHistory();
+
+      case 'EXPORT_USER_DATA':
+        return this.storageService.exportUserData(payload);
+
+      default:
+        throw new AIError('UNSUPPORTED_ACTION', `Unsupported action type: ${actionType}`);
+    }
+  }
+
+  // ------------------------------------------------------------------- tasks
+
+  /**
+   * Run one AI task end to end.
+   *
+   * @param {string} task
+   * @param {any} payload  Must carry `content` — the text to analyse.
+   * @returns {Promise<{ text: string, provider: string, model: string, truncated: boolean }>}
+   */
+  async runTask(task, payload) {
+    const content = (payload.content || '').trim();
+    if (!content) {
+      throw new AIError('NO_CONTENT', 'No page content available for this action');
     }
 
-    const aiProvider = await this.aiOrchestrator.getOptimalProvider();
-    const summaryOptions = {
-      type: summaryType || 'key-points',
-      length: targetLength || 'medium',
-      customPrompt: customPrompt,
-      maxTokens: this.calculateMaxTokens(targetLength)
-    };
+    const client = await this.configManager.createAIClient();
+    const prompt = buildPrompt(task, { ...payload, content, text: content, context: content });
+    const text = await client.complete(prompt.system, prompt.user, prompt.maxTokens);
 
-    const summary = await aiProvider.generateSummary(content, summaryOptions);
-    
-    // Store summary for user history
+    return {
+      text,
+      provider: client.provider,
+      model: client.model,
+      truncated: wasTruncated(content)
+    };
+  }
+
+  /** @param {any} payload */
+  async summarize(payload) {
+    const result = await this.runTask('summary', payload);
+
     await this.storageService.saveSummaryHistory({
-      originalContent: content.substring(0, 500),
-      // @ts-ignore - summary might be string or object depending on provider
-      summary,
-      options: summaryOptions,
-      provider: aiProvider.name,
+      originalContent: payload.content.slice(0, 500),
+      summary: result.text,
+      options: { type: payload.summaryType, length: payload.targetLength },
+      provider: result.provider,
       timestamp: Date.now()
     });
 
     return {
-      summary,
-      provider: aiProvider.name,
-      // @ts-ignore - confidence property existence check
-      confidence: summary.confidence || 0.95,
-      processingStats: {
-        inputLength: content.length,
-        outputLength: typeof summary === 'string' ? summary.length : 0,
-        // @ts-ignore
-        compressionRatio: (typeof summary === 'string' && content.length > 0) ? (summary.length / content.length).toFixed(2) : '0.00'
+      ...result,
+      summary: result.text,
+      stats: {
+        inputLength: payload.content.length,
+        outputLength: result.text.length
       }
     };
   }
 
   /** @param {any} payload */
-  async processContextualQuestion(payload) {
-    const { question, context, conversationHistory } = payload;
-    
-    const aiProvider = await this.aiOrchestrator.getOptimalProvider();
-    const answer = await aiProvider.answerQuestion(question, {
-      context,
-      conversationHistory: conversationHistory || [],
-      includeSourceReferences: true
-    });
+  async answerQuestion(payload) {
+    if (!this.validator.isValidQuestion(payload.question)) {
+      throw new AIError('INVALID_QUESTION', 'Question is empty or too long');
+    }
 
-    // Update conversation history
+    const result = await this.runTask('question', { ...payload, content: payload.context });
+
     await this.storageService.updateConversationHistory({
-      question,
-      answer,
-      context: context.substring(0, 200),
+      question: payload.question,
+      answer: result.text,
+      context: (payload.context || '').slice(0, 200),
       timestamp: Date.now()
     });
 
-    return {
-      answer,
-      provider: aiProvider.name,
-      confidence: answer.confidence || 0.9,
-      sourceReferences: answer.sourceReferences || []
-    };
+    return { ...result, answer: result.text };
   }
 
-  async createContextMenus() {
-    await chrome.contextMenus.removeAll();
-    
-    /** @type {chrome.contextMenus.CreateProperties[]} */
-    const contextMenuItems = [
-      {
-        id: 'genai-summarize-selection',
-        title: '🤖 Summarize selected text',
-        contexts: ['selection']
-      },
-      {
-        id: 'genai-explain-selection',
-        title: '🧠 Explain this concept',
-        contexts: ['selection']
-      },
-      {
-        id: 'genai-translate-selection',
-        title: '🌐 Translate selection',
-        contexts: ['selection']
-      },
-      {
-        id: 'genai-analyze-sentiment',
-        title: '😊 Analyze sentiment',
-        contexts: ['selection']
-      },
-      { type: 'separator', id: 'separator-1', contexts: ['page'] },
-      {
-        id: 'genai-summarize-page',
-        title: '📄 Summarize entire page',
-        contexts: ['page']
-      },
-      {
-        id: 'genai-extract-insights',
-        title: '💡 Extract key insights',
-        contexts: ['page']
-      },
-      {
-        id: 'genai-generate-tags',
-        title: '🏷️ Generate smart tags',
-        contexts: ['page']
-      }
-    ];
-
-    contextMenuItems.forEach(item => chrome.contextMenus.create(item));
-    this.logger.info('Context menus created successfully');
-  }
-
-  /** 
-   * @param {chrome.contextMenus.OnClickData} info 
-   * @param {chrome.tabs.Tab} [tab] 
+  /**
+   * Ask the content script for the page text.
+   *
+   * @param {number | undefined} tabId
+   * @returns {Promise<any>}
    */
-  async handleContextMenuAction(info, tab) {
+  async extractPageContent(tabId) {
+    if (!tabId) {
+      throw new AIError('NO_TAB', 'No active tab to read content from');
+    }
+
+    let response;
     try {
-      const { menuItemId, selectionText } = info;
-      const text = selectionText || '';
-      const tabId = tab?.id || 0;
-      
-      switch (menuItemId) {
-        case 'genai-summarize-selection':
-          await this.quickSummarizeText(text);
-          break;
-          
-        case 'genai-explain-selection':
-          await this.quickExplainConcept(text);
-          break;
-          
-        case 'genai-translate-selection':
-          await this.quickTranslateText(text);
-          break;
-          
-        case 'genai-analyze-sentiment':
-          await this.quickAnalyzeSentiment(text);
-          break;
-          
-        case 'genai-summarize-page':
-          await this.quickSummarizePage(tabId);
-          break;
-          
-        case 'genai-extract-insights':
-          await this.quickExtractInsights(tabId);
-          break;
-          
-        case 'genai-generate-tags':
-          await this.quickGenerateTags(tabId);
-          break;
-      }
+      response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
     } catch (error) {
       /** @type {any} */
       const err = error;
-      this.errorHandler.handleError(err, 'Context menu action failed');
-      this.notificationManager.showError('Action failed. Please try again.');
+      // Content scripts do not run on chrome:// pages, the Web Store, or PDFs.
+      throw new AIError(
+        'CONTENT_SCRIPT_UNAVAILABLE',
+        `Cannot read this page (${err.message}). Extensions cannot access browser pages or the Chrome Web Store.`
+      );
     }
-  }
 
-  /** @param {string} text */
-  async quickSummarizeText(text) {
-    const summary = await this.processContentSummary({
-      content: text,
-      summaryType: 'key-points',
-      targetLength: 'short'
-    });
-    
-    // @ts-ignore
-    this.notificationManager.showSuccess(
-      'Text Summarized',
-      summary.summary.substring(0, 100) + '...'
-    );
-  }
-
-  async setupPeriodicTasks() {
-    // Clean up old data every 24 hours
-    chrome.alarms.create('cleanupOldData', { periodInMinutes: 1440 });
-    
-    // Update AI model availability every 6 hours
-    chrome.alarms.create('updateAIStatus', { periodInMinutes: 360 });
-    
-    chrome.alarms.onAlarm.addListener(this.handlePeriodicTask.bind(this));
-  }
-
-  /** @param {chrome.alarms.Alarm} alarm */
-  async handlePeriodicTask(alarm) {
-    switch (alarm.name) {
-      case 'cleanupOldData':
-        await this.storageService.cleanupOldData();
-        break;
-        
-      case 'updateAIStatus':
-        await this.aiOrchestrator.refreshProviderAvailability();
-        break;
+    if (!response?.success) {
+      throw new AIError('EXTRACTION_FAILED', response?.error || 'Content extraction failed');
     }
+    return response.data;
   }
 
-  /** @param {string} targetLength */
-  calculateMaxTokens(targetLength) {
-    /** @type {Record<string, number>} */
-    const lengthTokenMap = {
-      'short': 150,
-      'medium': 300,
-      'long': 500,
-      'detailed': 800
-    };
-    return lengthTokenMap[targetLength] || 300;
+  // ------------------------------------------------------------ context menus
+
+  async createContextMenus() {
+    await chrome.contextMenus.removeAll();
+
+    /** @type {chrome.contextMenus.CreateProperties[]} */
+    const items = [
+      { id: 'genai-summarize-selection', title: 'Summarize selected text', contexts: ['selection'] },
+      { id: 'genai-explain-selection', title: 'Explain this selection', contexts: ['selection'] },
+      { id: 'genai-translate-selection', title: 'Translate selection', contexts: ['selection'] },
+      { id: 'genai-analyze-sentiment', title: 'Analyze sentiment', contexts: ['selection'] },
+      { id: 'genai-summarize-page', title: 'Summarize entire page', contexts: ['page'] },
+      { id: 'genai-extract-insights', title: 'Extract key insights', contexts: ['page'] },
+      { id: 'genai-generate-tags', title: 'Generate smart tags', contexts: ['page'] }
+    ];
+    items.forEach(item => chrome.contextMenus.create(item));
   }
 
-  // Stubs for missing methods
-  /** @param {any} details */
-  async handleInstallation(details) {
-    this.logger.info('Extension installed/updated', details);
-    await this.createContextMenus();
+  /**
+   * @param {chrome.contextMenus.OnClickData} info
+   * @param {chrome.tabs.Tab} [tab]
+   */
+  async handleContextMenu(info, tab) {
+    const entry = CONTEXT_MENU_TASKS[String(info.menuItemId)];
+    if (!entry) return;
+
+    try {
+      const content = entry.source === 'selection'
+        ? info.selectionText || ''
+        : (await this.extractPageContent(tab?.id)).mainText;
+
+      const settings = await this.configManager.getUserPreferences();
+      const result = await this.runTask(entry.task, {
+        content,
+        summaryType: settings.summaryType,
+        targetLength: 'short',
+        targetLanguage: settings.targetLanguage
+      });
+
+      this.notificationManager.showSuccess(entry.title, truncateForNotification(result.text));
+    } catch (error) {
+      /** @type {any} */
+      const err = error;
+      this.logger.error('Context menu action failed', err.message);
+      this.notificationManager.showError(err.message);
+    }
   }
 
   /** @param {string} command */
-  async handleKeyboardCommand(command) {
-    this.logger.info('Keyboard command received', { command });
-  }
-
-  /**
-   * @param {number} _tabId
-   * @param {object} _changeInfo
-   * @param {chrome.tabs.Tab} _tab
-   */
-  async handleTabUpdate(_tabId, _changeInfo, _tab) {}
-  
-  /** @param {object} _activeInfo */
-  async handleTabActivation(_activeInfo) {}
-  
-  /**
-   * @param {object} _changes
-   * @param {string} _areaName
-   */
-  async handleStorageChange(_changes, _areaName) {}
-
-  /** @param {any} _payload */
-  async processContentTranslation(_payload) { return {}; }
-  /** @param {any} _payload */
-  async processSentimentAnalysis(_payload) { return {}; }
-  /** @param {number} tabId @param {any} _payload */
-  async extractPageContent(tabId, _payload) {
-    if (!tabId) throw new Error('No active tab');
-    try {
-        const response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
-        if (response && response.success) {
-            return response.data;
-        }
-        throw new Error(response?.error || 'Extraction failed');
-    } catch (error) {
-        console.warn('Tab communication failed:', error);
-        throw error;
+  async handleCommand(command) {
+    if (command === 'quick-summarize') {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      await this.handleContextMenu(
+        /** @type {any} */ ({ menuItemId: 'genai-summarize-page' }),
+        tab
+      );
     }
   }
-  /** @param {any} _payload */
-  async createIntelligentBookmark(_payload) { return {}; }
-  /** @param {any} _payload */
-  async exportUserData(_payload) { return {}; }
-  /** @param {any} _payload */
-  async importUserData(_payload) { return {}; }
 
-  /** @param {string} _text */
-  async quickExplainConcept(_text) {}
-  /** @param {string} _text */
-  async quickTranslateText(_text) {}
-  /** @param {string} _text */
-  async quickAnalyzeSentiment(_text) {}
-  /** @param {number} _tabId */
-  async quickSummarizePage(_tabId) {}
-  /** @param {number} _tabId */
-  async quickExtractInsights(_tabId) {}
-  /** @param {number} _tabId */
-  async quickGenerateTags(_tabId) {}
+  // ----------------------------------------------------------------- lifecycle
+
+  /** @param {chrome.runtime.InstalledDetails} details */
+  async handleInstalled(details) {
+    await this.createContextMenus();
+    if (details.reason === 'install') {
+      chrome.runtime.openOptionsPage();
+    }
+  }
+
+  /** @param {chrome.alarms.Alarm} alarm */
+  async handleAlarm(alarm) {
+    if (alarm.name === 'cleanupOldData') {
+      await this.storageService.cleanupOldData();
+    }
+  }
 }
 
-// Initialize the service
-new BackgroundServiceOrchestrator();
+/**
+ * Chrome notifications silently drop bodies over ~250 characters.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function truncateForNotification(text) {
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+}
+
+new BackgroundService();

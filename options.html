@@ -55,17 +55,43 @@
                     </div>
                     <div class="setting-group">
                         <h3>Primary AI Provider</h3>
+                        <p class="setting-hint">Requests go directly from your browser to the provider you pick. Nothing is sent anywhere else.</p>
                         <div class="provider-options">
-                            <label><input type="radio" name="primary-provider" value="chrome-ai"> Chrome Built-in AI</label>
+                            <label><input type="radio" name="primary-provider" value="anthropic"> Anthropic Claude</label>
                             <label><input type="radio" name="primary-provider" value="openai"> OpenAI</label>
-                            <!-- Add other providers as needed -->
+                            <label><input type="radio" name="primary-provider" value="gemini"> Google Gemini</label>
                         </div>
                     </div>
                     <div class="setting-group">
                         <h3>API Keys</h3>
+                        <p class="setting-hint">Stored in Chrome sync storage. Only the provider you select receives your key.</p>
+                        <div class="setting-item">
+                            <label for="anthropic-key">Anthropic API Key</label>
+                            <input type="password" id="anthropic-key" autocomplete="off" placeholder="sk-ant-...">
+                        </div>
                         <div class="setting-item">
                             <label for="openai-key">OpenAI API Key</label>
-                            <input type="password" id="openai-key" placeholder="Enter your OpenAI API key">
+                            <input type="password" id="openai-key" autocomplete="off" placeholder="sk-...">
+                        </div>
+                        <div class="setting-item">
+                            <label for="gemini-key">Google Gemini API Key</label>
+                            <input type="password" id="gemini-key" autocomplete="off" placeholder="AIza...">
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <h3>Models</h3>
+                        <p class="setting-hint">Leave blank to use each provider's default.</p>
+                        <div class="setting-item">
+                            <label for="anthropic-model">Anthropic model</label>
+                            <input type="text" id="anthropic-model" placeholder="claude-opus-5">
+                        </div>
+                        <div class="setting-item">
+                            <label for="openai-model">OpenAI model</label>
+                            <input type="text" id="openai-model" placeholder="gpt-4o-mini">
+                        </div>
+                        <div class="setting-item">
+                            <label for="gemini-model">Gemini model</label>
+                            <input type="text" id="gemini-model" placeholder="gemini-2.5-flash">
                         </div>
                     </div>
                 </section>
@@ -78,13 +104,30 @@
                     </div>
                     <div class="setting-group">
                         <div class="setting-item">
-                            <label><input type="checkbox" id="smart-bookmarks"> Enable Smart Bookmarks</label>
+                            <label for="summary-type-pref">Default summary style</label>
+                            <select id="summary-type-pref">
+                                <option value="key-points">Key points</option>
+                                <option value="tldr">TL;DR</option>
+                                <option value="executive">Executive</option>
+                                <option value="technical">Technical</option>
+                            </select>
                         </div>
                         <div class="setting-item">
-                            <label><input type="checkbox" id="context-menus"> Enable Context Menus</label>
+                            <label for="summary-length-pref">Default summary length</label>
+                            <select id="summary-length-pref">
+                                <option value="short">Short</option>
+                                <option value="medium">Medium</option>
+                                <option value="long">Long</option>
+                            </select>
                         </div>
                         <div class="setting-item">
-                            <label><input type="checkbox" id="auto-analysis"> Enable Auto Page Analysis</label>
+                            <label><input type="checkbox" id="contextMenus"> Enable right-click menu actions</label>
+                        </div>
+                        <div class="setting-item">
+                            <label><input type="checkbox" id="notifications"> Show desktop notifications</label>
+                        </div>
+                        <div class="setting-item">
+                            <label><input type="checkbox" id="saveHistory"> Save summaries and chats locally</label>
                         </div>
                     </div>
                 </section>

@@ -20,6 +20,7 @@ const mockChrome = {
     },
     sendMessage: vi.fn(),
     getURL: vi.fn((path) => `chrome-extension://mock-id/${path}`),
+    openOptionsPage: vi.fn(),
     id: 'mock-extension-id'
   },
   storage: {

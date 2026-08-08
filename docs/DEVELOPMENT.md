@@ -311,16 +311,19 @@ class PerformanceTracker {
 ### Unit Testing
 
 ```javascript
-// Example test structure
-describe('AIProviderOrchestrator', () => {
-  it('should select optimal provider', async () => {
-    const orchestrator = new AIProviderOrchestrator();
-    const provider = await orchestrator.getOptimalProvider('summarization');
-    expect(provider).toBeDefined();
-    expect(provider.name).toMatch(/openai|anthropic|google/);
+// tests/providers/ai-client.test.js
+describe('AIClient', () => {
+  it('reports a missing API key with a code the UI can branch on', () => {
+    expect(() => new AIClient({ provider: 'anthropic', apiKey: '' }))
+      .toThrow(/options page/i);
   });
 });
 ```
+
+Tests mock `global.fetch` (set up in `tests/setup.js`) — no test ever reaches a
+real provider. `tests/integration/extension-workflow.test.js` imports
+`background.js`, captures the registered `chrome.runtime.onMessage` listener, and
+drives complete request/response cycles through it.
 
 ### E2E Testing
 
@@ -342,28 +345,28 @@ test('should load extension', async ({ page, context }) => {
 
 ## Build System
 
-### Development Build
+**No build step is required for development.** Load the repository root as an
+unpacked extension; `manifest.json` points at the source files and Chrome loads
+ES modules natively in MV3 service workers. After editing, hit **Reload** on
+`chrome://extensions`.
 
 ```bash
-npm run dev              # Start development server
-npm run build:extension  # Build extension files
-npm run watch           # Watch for changes
-```
-
-### Production Build
-
-```bash
-npm run build           # Full production build
-npm run build:web       # Web interface build
-npm run optimize        # Bundle optimization
+npm run dev      # Rollup in watch mode (only needed to test the bundled output)
+npm run build    # Bundle + minify to dist/ for packaging
+npm run verify   # lint + typecheck + test — run this before a PR
 ```
 
 ### Build Configuration
 
-- **Rollup**: Extension bundling
-- **Vite**: Web interface building
-- **TypeScript**: Type checking
-- **PostCSS**: CSS processing
+- **Rollup** (`rollup.extension.config.js`): bundles the four entry points
+  (`background.js`, `content.js`, `scripts/popup-main.js`, `options.js`) to
+  `dist/`. Minifies only when `NODE_ENV=production`.
+- **TypeScript**: type checking of JavaScript via JSDoc (`checkJs: true`). No
+  `.ts` source files. `npm run typecheck` must report zero errors.
+
+`dist/` contains no `manifest.json` or HTML, so it is not loadable on its own —
+packaging for the Web Store means zipping the root with `node_modules`, `tests`,
+and `docs` excluded.
 
 ## Deployment
 

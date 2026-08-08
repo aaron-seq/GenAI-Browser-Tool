@@ -5,6 +5,71 @@ All notable changes to the GenAI Browser Tool project will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0]
+
+Makes the extension actually perform AI work. Prior versions shipped stub
+providers that returned hardcoded strings.
+
+### Fixed
+- **AI calls returned hardcoded stubs.** Four of five providers
+  (`anthropic`, `gemini`, `cohere`, `chrome-ai`) returned literal strings such as
+  `"Anthropic Summary Stub"`. Because they all reported `isAvailable() === true`,
+  the orchestrator's load balancer usually selected a stub over the one real
+  provider, so a configured user still received fake output.
+- **API keys were written and read from different storage keys.** The options
+  page saved to `user_preferences.apiKeys.openai`; the OpenAI provider read
+  `chrome.storage.sync.get(['openai_api_key'])`. A correctly entered key was
+  never found, so the only real provider always failed authentication.
+- **Every popup-initiated page extraction failed.** `EXTRACT_PAGE_CONTENT` read
+  `sender.tab?.id`, which is `undefined` for messages from a popup, and ignored
+  the `tabId` the popup supplied — so it always threw "No active tab".
+- **The options page crashed on load.** It read `settings.features.smartBookmarks`
+  and set `.checked` on a provider radio that did not exist in the markup;
+  `defaultSettings` had no `features` key. Both threw `TypeError`.
+- **`npm run build` failed.** `build:web` ran `vite build` against a `web/`
+  directory that does not exist in the repository.
+- **Notifications never appeared.** `iconUrl: 'icon.png'` does not resolve to a
+  packaged file, so Chrome silently dropped every notification.
+- The content script injected `popup.css` into every page visited.
+- `manifest.json` declared an `offscreen` key, which is not a manifest key —
+  offscreen documents are created via `chrome.offscreen.createDocument()`, which
+  was never called. The offscreen document was dead code.
+
+### Changed
+- Replaced five provider classes, the scoring orchestrator, and the load balancer
+  (~350 lines) with one 190-line `providers/ai-client.js`. Provider choice is now
+  the user's explicit setting; an unconfigured provider is a `MISSING_API_KEY`
+  error rather than a silent substitution.
+- Prompt construction moved to `core/tasks.js`, which fences page content in
+  `<<<PAGE_CONTENT>>>` markers and instructs the model to treat it as untrusted
+  data — a prompt-injection mitigation that did not previously exist.
+- All errors now carry a machine-readable code and reach the UI as text.
+- Dropped `tabs`, `bookmarks`, `history`, `scripting`, and `offscreen`
+  permissions, and the Cohere and HuggingFace host permissions.
+- Typecheck now covers the shipped source and reports zero errors (was 285).
+
+### Added
+- Real implementations for translation, sentiment, key insights, smart tags, and
+  entity extraction — previously stubs returning `{}` or a success toast.
+- Locally computed readability (Flesch) and page statistics — no API call.
+- `GET_PROVIDER_STATUS` action and a popup badge showing whether a key is set.
+- 84 tests (was 27), covering provider request shaping, auth and network failure
+  modes, prompt injection defences, output escaping, and the message router.
+- `npm run verify` (lint + typecheck + test).
+
+### Removed
+- Zero runtime dependencies: all ten were unused
+  (`dompurify`, `zod`, `marked`, `idb`, `validator`, `ai`, `@ai-sdk/*`,
+  `@google-ai/generativelanguage`). Vulnerabilities dropped from 49 to 23, all
+  in dev tooling.
+- Dead duplicates: `popup.js`, `content-scripts/content-main.js`, `src/popup/`,
+  `src/services/`, `src/ui/`, `src/utils/event-manager.js`,
+  `src/utils/error-handler.js`, `services/ai-service.js`,
+  `services/content-extractor.js`, `services/analytics-tracker.js`.
+- `vercel.json`, `railway.toml`, `render.yaml`, `vite.config.js`,
+  `rollup.config.js`, `.env.example`, `test_results.txt` — deployment and build
+  config for a web app this repository does not contain.
+
 ## [Unreleased]
 
 ### Added

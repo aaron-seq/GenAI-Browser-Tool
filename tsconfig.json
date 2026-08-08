@@ -42,16 +42,24 @@
     "verbatimModuleSyntax": false
   },
   "include": [
+    "background.js",
+    "content.js",
+    "options.js",
+    "core/**/*",
+    "providers/**/*",
+    "scripts/**/*",
+    "services/**/*",
     "src/**/*",
-    "types/**/*",
-    "tests/**/*",
-    "*.config.*"
+    "utils/**/*",
+    "types/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "build",
     "coverage",
+    "tests",
+    "*.config.js",
     "*.min.js"
   ],
   "ts-node": {
