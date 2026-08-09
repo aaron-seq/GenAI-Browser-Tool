@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+  # No `branches:` filter — a stacked PR whose base is another feature branch
+  # must still be checked. Filtering on [main] silently gave those PRs no checks
+  # at all, which looks identical to "nothing to run".
   pull_request:
-    branches: [main]
 
 jobs:
   verify:

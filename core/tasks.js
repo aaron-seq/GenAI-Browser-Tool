@@ -8,8 +8,17 @@
  * content to be summarized, not a command.
  */
 
-/** Longest page excerpt sent to a provider. Keeps one request bounded and cheap. */
+/** Longest page excerpt sent to a provider in a single request. */
 export const MAX_CONTENT_CHARS = 24000;
+
+/**
+ * Most chunks a long page is split into for map-reduce summarization.
+ *
+ * Each chunk costs one request, so this is the ceiling on what a single
+ * "Summarize" click can spend: 8 chunks + 1 reduce = 9 calls, covering roughly
+ * 192,000 characters. Content past that is dropped and the UI says so.
+ */
+export const MAX_CHUNKS = 8;
 
 const FENCE = '<<<PAGE_CONTENT>>>';
 
@@ -67,6 +76,74 @@ export function wasTruncated(content) {
 }
 
 /**
+ * Split long text into chunks that each fit one request.
+ *
+ * Splits on blank lines so a chunk boundary lands between paragraphs rather
+ * than mid-sentence — a summary of half a sentence is worse than a slightly
+ * uneven split. A single paragraph longer than the limit is hard-split, since
+ * there is no better boundary available.
+ *
+ * @param {string} text
+ * @param {number} [maxChars]
+ * @param {number} [maxChunks]
+ * @returns {{ chunks: string[], droppedChars: number }}
+ */
+export function chunkContent(text, maxChars = MAX_CONTENT_CHARS, maxChunks = MAX_CHUNKS) {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxChars) {
+    return { chunks: trimmed ? [trimmed] : [], droppedChars: 0 };
+  }
+
+  /** @type {string[]} */
+  const chunks = [];
+  let current = '';
+
+  for (const paragraph of splitParagraphs(trimmed, maxChars)) {
+    // +2 for the blank line that rejoins them.
+    if (current && current.length + paragraph.length + 2 > maxChars) {
+      chunks.push(current);
+      current = paragraph;
+    } else {
+      current = current ? `${current}\n\n${paragraph}` : paragraph;
+    }
+  }
+  if (current) chunks.push(current);
+
+  if (chunks.length <= maxChunks) {
+    return { chunks, droppedChars: 0 };
+  }
+
+  const kept = chunks.slice(0, maxChunks);
+  const droppedChars = chunks.slice(maxChunks).reduce((total, c) => total + c.length, 0);
+  return { chunks: kept, droppedChars };
+}
+
+/**
+ * Paragraphs of `text`, with any paragraph longer than `maxChars` hard-split.
+ *
+ * @param {string} text
+ * @param {number} maxChars
+ * @returns {string[]}
+ */
+function splitParagraphs(text, maxChars) {
+  /** @type {string[]} */
+  const out = [];
+  for (const paragraph of text.split(/\n\s*\n/)) {
+    const clean = paragraph.trim();
+    if (!clean) continue;
+
+    if (clean.length <= maxChars) {
+      out.push(clean);
+      continue;
+    }
+    for (let i = 0; i < clean.length; i += maxChars) {
+      out.push(clean.slice(i, i + maxChars));
+    }
+  }
+  return out;
+}
+
+/**
  * Build the prompt pair for a task.
  *
  * @param {string} task
@@ -81,6 +158,35 @@ export function buildPrompt(task, payload) {
       return {
         system: `${GROUNDING} ${style}`,
         user: `Summarize this page.\n\n${fenceContent(payload.content)}`,
+        maxTokens
+      };
+    }
+
+    // Map step: one section of a long page. Asks for retained detail rather
+    // than a polished summary — this output is input to the reduce step, and
+    // compressing twice loses specifics the final summary needs.
+    case 'summary-chunk':
+      return {
+        system: `${GROUNDING} You are reading section ${payload.index + 1} of` +
+          ` ${payload.total} of a long page. List the substantive points from this` +
+          ' section as terse bullets, preserving names, numbers, and specifics.' +
+          ' Do not write an introduction or a conclusion — later sections follow.',
+        user: fenceContent(payload.content),
+        maxTokens: 700
+      };
+
+    // Reduce step: partial summaries are our own output, so they are trusted
+    // input and are not fenced.
+    case 'summary-reduce': {
+      const style = SUMMARY_STYLES[payload.summaryType] || DEFAULT_SUMMARY_STYLE;
+      const maxTokens = LENGTH_TOKENS[payload.targetLength] || DEFAULT_SUMMARY_TOKENS;
+      return {
+        system: `${style} You are given ordered notes taken from consecutive` +
+          ' sections of one page. Merge them into a single coherent summary of the' +
+          ' whole page. Remove duplication, keep specifics, and do not mention the' +
+          ' sections or that the page was processed in parts.',
+        user: `Notes from ${payload.total} sections of "${payload.title || 'the page'}":\n\n` +
+          payload.notes,
         maxTokens
       };
     }
@@ -102,13 +208,18 @@ export function buildPrompt(task, payload) {
       };
     }
 
-    case 'translation':
+    case 'translation': {
+      const from = payload.sourceLanguage && payload.sourceLanguage !== 'auto'
+        ? ` from ${payload.sourceLanguage}`
+        : '';
       return {
-        system: `${GROUNDING} Translate the page text into ${payload.targetLanguage || 'English'}.` +
+        system: `${GROUNDING} Translate the page text${from} into` +
+          ` ${payload.targetLanguage || 'English'}.` +
           ' Return only the translation, with no preamble and no commentary.',
         user: fenceContent(payload.text),
         maxTokens: 2000
       };
+    }
 
     case 'sentiment':
       return {

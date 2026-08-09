@@ -103,10 +103,6 @@
                             <span class="button-icon">✨</span>
                             Generate Summary
                         </button>
-                        <button class="secondary-button" id="save-summary-btn" style="display: none;">
-                            <span class="button-icon">💾</span>
-                            Save Summary
-                        </button>
                     </div>
                     
                     <div class="results-container" id="summary-results" style="display: none;">
@@ -216,10 +212,6 @@
                                 <input type="checkbox" id="translate-page" checked>
                                 <span class="checkbox-text">Translate entire page</span>
                             </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="preserve-formatting">
-                                <span class="checkbox-text">Preserve formatting</span>
-                            </label>
                         </div>
                     </div>
                     
@@ -242,9 +234,6 @@
                         <div class="result-actions">
                             <button class="action-button" id="copy-translation-btn">
                                 📋 Copy
-                            </button>
-                            <button class="action-button" id="speak-translation-btn">
-                                🔊 Speak
                             </button>
                         </div>
                     </div>
@@ -298,6 +287,16 @@
                                 <div class="placeholder">Click extract to start</div>
                             </div>
                         </div>
+
+                        <div class="analysis-card">
+                            <div class="card-header">
+                                <h3>🏛️ Entities</h3>
+                                <button class="analyze-btn" data-type="entities">Extract</button>
+                            </div>
+                            <div class="analysis-result" id="entities-result">
+                                <div class="placeholder">People, organizations, places, products, dates</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -310,13 +309,6 @@
                     </div>
                     
                     <div class="tools-grid">
-                        <div class="tool-card">
-                            <div class="tool-icon">📝</div>
-                            <h3>Smart Bookmark</h3>
-                            <p>Save page with AI-generated summary and tags</p>
-                            <button class="tool-button" id="smart-bookmark-btn">Create Bookmark</button>
-                        </div>
-                        
                         <div class="tool-card">
                             <div class="tool-icon">📤</div>
                             <h3>Export Data</h3>

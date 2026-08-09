@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AIClient, AIError, PROVIDERS } from '../../providers/ai-client.js';
+import {
+  AIClient,
+  AIError,
+  PROVIDERS,
+  backoffDelay,
+  parseRetryAfter
+} from '../../providers/ai-client.js';
 
 /**
  * @param {any} body
@@ -10,8 +16,14 @@ function mockResponse(body, init = {}) {
     ok: init.ok !== false,
     status: init.status ?? 200,
     statusText: init.statusText ?? 'OK',
+    headers: { get: () => init.retryAfter ?? null },
     json: vi.fn().mockResolvedValue(body)
   };
+}
+
+/** A client that retries without making the test wait for real backoff. */
+function fastClient(overrides = {}) {
+  return new AIClient({ provider: 'anthropic', apiKey: 'k', ...overrides });
 }
 
 const ANTHROPIC_OK = { content: [{ type: 'text', text: '  a summary  ' }] };
@@ -102,6 +114,138 @@ describe('AIClient', () => {
     });
   });
 
+  describe('retrying transient failures', () => {
+    // Chunked summarization turns one request into up to nine. Without retries a
+    // single transient 429 discards every section that already succeeded.
+    it('retries a 429 and returns the eventual success', async () => {
+      global.fetch
+        .mockResolvedValueOnce(mockResponse({ error: { message: 'slow down' } }, { ok: false, status: 429 }))
+        .mockResolvedValueOnce(mockResponse(ANTHROPIC_OK));
+
+      const text = await fastClient().complete('s', 'u');
+
+      expect(text).toBe('a summary');
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries a 529 overloaded response', async () => {
+      global.fetch
+        .mockResolvedValueOnce(mockResponse({}, { ok: false, status: 529 }))
+        .mockResolvedValueOnce(mockResponse(ANTHROPIC_OK));
+
+      await expect(fastClient().complete('s', 'u')).resolves.toBe('a summary');
+    });
+
+    it('retries a network blip', async () => {
+      global.fetch
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValueOnce(mockResponse(ANTHROPIC_OK));
+
+      await expect(fastClient().complete('s', 'u')).resolves.toBe('a summary');
+    });
+
+    it('gives up after maxRetries and reports the last error', async () => {
+      global.fetch.mockResolvedValue(
+        mockResponse({ error: { message: 'slow down' } }, { ok: false, status: 429 })
+      );
+
+      await expect(fastClient({ maxRetries: 2 }).complete('s', 'u')).rejects.toMatchObject({
+        code: 'PROVIDER_ERROR'
+      });
+      // The initial attempt plus two retries.
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('can be configured to not retry at all', async () => {
+      global.fetch.mockResolvedValue(mockResponse({}, { ok: false, status: 503 }));
+
+      await expect(fastClient({ maxRetries: 0 }).complete('s', 'u')).rejects.toThrow();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry a bad API key — that wastes quota and hides the real error', async () => {
+      global.fetch.mockResolvedValue(
+        mockResponse({ error: { message: 'invalid x-api-key' } }, { ok: false, status: 401 })
+      );
+
+      await expect(fastClient().complete('s', 'u')).rejects.toMatchObject({ code: 'AUTH_ERROR' });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry a malformed request', async () => {
+      global.fetch.mockResolvedValue(mockResponse({}, { ok: false, status: 400 }));
+
+      await expect(fastClient().complete('s', 'u')).rejects.toThrow();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry a timeout, which may still be running provider side', async () => {
+      const abort = new Error('aborted');
+      abort.name = 'AbortError';
+      global.fetch.mockRejectedValue(abort);
+
+      await expect(fastClient({ timeoutMs: 10 }).complete('s', 'u')).rejects.toMatchObject({
+        code: 'TIMEOUT'
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends an identical body on every attempt', async () => {
+      global.fetch
+        .mockResolvedValueOnce(mockResponse({}, { ok: false, status: 429 }))
+        .mockResolvedValueOnce(mockResponse(ANTHROPIC_OK));
+
+      await fastClient().complete('system', 'user', 400);
+
+      const [first, second] = global.fetch.mock.calls.map(call => call[1].body);
+      expect(first).toBe(second);
+    });
+  });
+
+  describe('backoff', () => {
+    it('grows exponentially and stays bounded', () => {
+      const first = backoffDelay(0);
+      const later = backoffDelay(3);
+
+      expect(later).toBeGreaterThan(first);
+      expect(backoffDelay(50)).toBeLessThanOrEqual(8000 + 500);
+    });
+
+    it('adds jitter so parallel sections do not resynchronise', () => {
+      const samples = new Set(Array.from({ length: 20 }, () => backoffDelay(1)));
+      expect(samples.size).toBeGreaterThan(1);
+    });
+
+    it("prefers the provider's Retry-After over our guess", () => {
+      expect(backoffDelay(0, 2000)).toBe(2000);
+    });
+
+    it('caps even a hostile Retry-After', () => {
+      expect(backoffDelay(0, 999999)).toBeLessThanOrEqual(8000);
+    });
+  });
+
+  describe('parseRetryAfter', () => {
+    it('reads a seconds value', () => {
+      expect(parseRetryAfter('3')).toBe(3000);
+    });
+
+    it('reads an HTTP date', () => {
+      const soon = new Date(Date.now() + 5000).toUTCString();
+      expect(parseRetryAfter(soon)).toBeGreaterThan(1000);
+    });
+
+    it('returns undefined when absent or unparseable', () => {
+      expect(parseRetryAfter(null)).toBeUndefined();
+      expect(parseRetryAfter('')).toBeUndefined();
+      expect(parseRetryAfter('next tuesday')).toBeUndefined();
+    });
+
+    it('never returns a negative delay for a past date', () => {
+      expect(parseRetryAfter(new Date(Date.now() - 60000).toUTCString())).toBe(0);
+    });
+  });
+
   describe('failure modes', () => {
     it('classifies 401 as an auth error', async () => {
       global.fetch.mockResolvedValue(
@@ -112,11 +256,13 @@ describe('AIClient', () => {
       await expect(client.complete('s', 'u')).rejects.toMatchObject({ code: 'AUTH_ERROR' });
     });
 
+    // These assert classification, not retry policy, so retries are off to keep
+    // them fast and to isolate what they cover.
     it('classifies other non-2xx responses as provider errors and keeps the message', async () => {
       global.fetch.mockResolvedValue(
         mockResponse({ error: { message: 'rate limited' } }, { ok: false, status: 429 })
       );
-      const client = new AIClient({ provider: 'openai', apiKey: 'k' });
+      const client = new AIClient({ provider: 'openai', apiKey: 'k', maxRetries: 0 });
 
       await expect(client.complete('s', 'u')).rejects.toMatchObject({
         code: 'PROVIDER_ERROR',
@@ -140,9 +286,10 @@ describe('AIClient', () => {
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
+        headers: { get: () => null },
         json: vi.fn().mockRejectedValue(new SyntaxError('not json'))
       });
-      const client = new AIClient({ provider: 'anthropic', apiKey: 'k' });
+      const client = new AIClient({ provider: 'anthropic', apiKey: 'k', maxRetries: 0 });
 
       await expect(client.complete('s', 'u')).rejects.toMatchObject({
         message: expect.stringContaining('Internal Server Error')
@@ -151,7 +298,7 @@ describe('AIClient', () => {
 
     it('reports a network failure without masking the cause', async () => {
       global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
-      const client = new AIClient({ provider: 'anthropic', apiKey: 'k' });
+      const client = new AIClient({ provider: 'anthropic', apiKey: 'k', maxRetries: 0 });
 
       await expect(client.complete('s', 'u')).rejects.toMatchObject({
         code: 'NETWORK_ERROR',

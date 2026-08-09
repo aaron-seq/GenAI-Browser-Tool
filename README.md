@@ -12,11 +12,12 @@ is no backend, no telemetry, and no third party in between.
 
 | Feature | Where | How it works |
 | --- | --- | --- |
-| Page summary | Popup → Summary | Four styles (key points, TL;DR, executive, technical) × four lengths |
+| Page summary | Popup → Summary | Four styles (key points, TL;DR, executive, technical) × four lengths. Long pages are summarized in sections — see below |
 | Ask about the page | Popup → Chat | Grounded in the extracted page text, with the last few turns as context |
-| Translate | Popup → Translate | Whole page, or the first 2,000 characters |
+| Translate | Popup → Translate | Whole page or first 2,000 characters, with an optional source language |
 | Sentiment | Popup → Analyze | A label plus a one-line reason |
 | Key insights | Popup → Analyze | Up to seven bullet points |
+| Entities | Popup → Analyze | People, organizations, places, products, dates |
 | Smart tags | Popup → Analyze | 3–8 topic tags |
 | Readability | Popup → Analyze | Flesch reading ease — computed locally, no API call |
 | Page stats | Popup → Tools | Word/character/heading counts and read time, computed locally |
@@ -24,6 +25,46 @@ is no backend, no telemetry, and no third party in between.
 | Export | Popup → Tools | Downloads saved summaries and chats as JSON |
 | Right-click actions | Any page | Summarize / explain / translate / sentiment on a selection; summarize, insights, or tags on the page |
 | `Ctrl+Shift+S` | Any page | Summarize the current page |
+
+### Long pages
+
+A page that exceeds 24,000 characters no longer gets silently truncated. It is
+split on paragraph boundaries into sections, each summarized in its own request,
+and the notes are merged into one summary — map-reduce, costing one request per
+section plus one to merge.
+
+This is capped at **8 sections (~192,000 characters, so 9 requests)** so a single
+click cannot run away with your API budget. The popup always states the coverage
+it achieved:
+
+| What you see | Meaning |
+| --- | --- |
+| `Whole page` | Fit in one request |
+| `Whole page, summarized across 4 sections` | Split, nothing dropped |
+| `Very long page — summarized the first 8 sections, 51,000 characters not included` | Hit the cap |
+
+Sections are summarized a few at a time rather than all at once — eight
+simultaneous requests is a reliable way to trip a per-minute rate limit and fail
+the very long pages the feature exists for.
+
+Chat, translation, and the analysis actions still use a single request and
+truncate at 24,000 characters. Chat says so in the thread the first time it
+happens, so an answer drawn from part of a page never looks exhaustive.
+
+### When a request fails
+
+Transient failures — `429`, `500`, `502`, `503`, `504`, `529`, and network blips
+— are retried twice with exponential backoff and jitter, honouring the
+provider's `Retry-After` header when it sends one.
+
+Errors that mean *this request is wrong* are **not** retried: `400`, `401`,
+`403`, `404`. Retrying those burns quota and delays the message you need to see.
+Timeouts are not retried either, since the request may still be running on the
+provider's side and a retry risks paying for the same work twice.
+
+If a section still fails after retries, the whole summary fails with the
+provider's own message. A partial summary presented as complete would be worse
+than an error.
 
 ### What it deliberately does not do
 
@@ -176,8 +217,9 @@ page requires reading it. It has no network access of its own.
 | "No API key configured" | Open the options page and add a key for the selected provider |
 | "Cannot read this page" | Content scripts cannot run on `chrome://` pages, the Chrome Web Store, or PDFs |
 | "returned 401" | The key is wrong, revoked, or belongs to a different provider |
-| "returned 429" | You hit the provider's rate limit |
-| "Long page — summarized from the first section only" | Page exceeded 24,000 characters; only the first section was sent |
+| "returned 429" | Rate limit, still hit after two retries — wait, or lower the request rate |
+| "…characters not included" | Page exceeded the 8-section cap; see [Long pages](#long-pages) |
+| A long page costs several requests | Expected — one per section plus one merge |
 | Popup unchanged after an edit | Reload the extension at `chrome://extensions`, then reopen the popup |
 
 Extension logs: `chrome://extensions` → **service worker** link under this
@@ -187,8 +229,9 @@ extension opens the background console.
 
 ## Known limitations
 
-- Long pages are truncated at 24,000 characters — no chunking or map-reduce
-  summarization.
+- Summarization handles long pages by sectioning, but chat, translation, and the
+  analysis actions still truncate at 24,000 characters.
+- Pages beyond ~192,000 characters are summarized only up to the 8-section cap.
 - Only the primary content container is extracted; heavily JavaScript-rendered or
   shadow-DOM pages may yield little text.
 - Multi-tab comparison and cross-page reasoning are not implemented.
