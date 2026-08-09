@@ -343,6 +343,41 @@ test('should load extension', async ({ page, context }) => {
 - **Chrome DevTools**: Performance profiling
 - **Coverage Reports**: Code coverage analysis
 
+## Content script constraint
+
+`content.js` **must contain no `import` or `export` statements.**
+
+A declarative MV3 content script is loaded as a *classic* script, where ESM
+syntax is a parse error. Chrome offers no `"type": "module"` for
+`content_scripts`, so the failure is silent: the script never loads, and every
+extraction returns `Receiving end does not exist`. Unit tests keep passing,
+because Vitest imports the file happily.
+
+It therefore exposes its class on `globalThis` for the test suite instead of
+exporting it. `tests/content/extraction.test.js` has a guard asserting the file
+stays ESM-free, so this is caught in a millisecond rather than by a full browser
+launch.
+
+`background.js` is a module (`"type": "module"` in the manifest's `background`
+block), and `popup-main.js` / `options.js` are loaded via
+`<script type="module">`, so those may use imports and exports freely.
+
+## Test layout
+
+| Path | Runner | Covers |
+| --- | --- | --- |
+| `tests/core`, `tests/providers`, `tests/utils` | Vitest | Pure logic: prompts, chunking, retry, config |
+| `tests/content`, `tests/options`, `tests/popup` | Vitest + jsdom | DOM controllers against a fixture |
+| `tests/integration` | Vitest | The background message router end to end, `fetch` mocked |
+| `tests/e2e` | Playwright | Real Chrome, extension loaded unpacked |
+
+Coverage thresholds are enforced (`npm run test:coverage` exits non-zero on a
+breach) and set to the level the suite currently holds. Raise them as coverage
+improves; do not lower them to go green.
+
+Note the numbers only reflect the Vitest run — Playwright drives a separate
+browser process and contributes nothing to them.
+
 ## Build System
 
 **No build step is required for development.** Load the repository root as an
