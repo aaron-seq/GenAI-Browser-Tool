@@ -7,6 +7,18 @@
  * that talks to a network.
  */
 
+/**
+ * NOTE: this file must contain no `import` or `export` statements.
+ *
+ * A declarative MV3 content script is loaded as a *classic* script, where ESM
+ * syntax is a parse error — the script silently fails to load and every
+ * extraction returns "Receiving end does not exist". Chrome offers no
+ * `"type": "module"` for `content_scripts`.
+ *
+ * A file with no ESM syntax is still importable by Vitest, so the test suite
+ * imports this module for its side effects and picks the class off `globalThis`
+ * (see the bottom of this file).
+ */
 class PageContentExtractor {
   constructor() {
     chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
@@ -139,4 +151,11 @@ class PageContentExtractor {
   }
 }
 
-new PageContentExtractor();
+// Exposed for the test suite, which cannot `import` from a classic script.
+/** @type {any} */ (globalThis).PageContentExtractor = PageContentExtractor;
+
+// Guarded so importing this file in a test does not register a listener against
+// a mock `chrome` with no real message channel.
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  new PageContentExtractor();
+}

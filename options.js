@@ -9,7 +9,7 @@
 import { ConfigurationManager } from './core/configuration-manager.js';
 import { PROVIDER_IDS } from './providers/ai-client.js';
 
-class OptionsPage {
+export class OptionsPage {
   constructor() {
     this.configManager = new ConfigurationManager();
     this.settings = this.configManager.defaultSettings;
