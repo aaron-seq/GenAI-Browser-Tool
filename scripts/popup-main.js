@@ -7,7 +7,7 @@
  * had seven handlers that only displayed "Saved"/"Exported" and did nothing.
  */
 
-class PopupInterface {
+export class PopupInterface {
   constructor() {
     /** @type {any} */
     this.pageContent = null;

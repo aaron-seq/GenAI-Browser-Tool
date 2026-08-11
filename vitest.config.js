@@ -22,21 +22,40 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      exclude: [
-        'coverage/**',
-        'dist/**',
-        '**/node_modules/**',
-        '**/tests/**',
-        '**/*.config.*',
-        '**/*.d.ts'
+
+      // Report on every shipped source file, including ones no test imports.
+      // Without this, a file with no tests is simply absent from the table and
+      // reads as "fine" rather than "uncovered".
+      all: true,
+      include: [
+        'background.js',
+        'content.js',
+        'options.js',
+        'core/**/*.js',
+        'providers/**/*.js',
+        'scripts/**/*.js',
+        'services/**/*.js',
+        'src/**/*.js',
+        'utils/**/*.js'
       ],
+      exclude: ['coverage/**', 'dist/**', '**/node_modules/**', '**/*.config.*', '**/*.d.ts'],
+
+      // Vitest reads these keys flat. The previous config nested them under a
+      // `global` key — the Jest shape — which Vitest treats as a glob pattern
+      // matching no file, so the gate silently enforced nothing while the suite
+      // sat below the number it claimed to require.
+      //
+      // Set at the level the suite actually holds, so any regression fails the
+      // build. Raise as coverage improves; never lower them to go green.
+      //
+      // The remaining drag is storage-service.js (~50%) and
+      // validation-service.js (~67%) — pre-existing modules whose export,
+      // import, and cleanup paths have no tests yet.
       thresholds: {
-        global: {
-          branches: 70,
-          functions: 70,
-          lines: 70,
-          statements: 70
-        }
+        statements: 83,
+        branches: 83,
+        functions: 84,
+        lines: 83
       }
     },
     testTimeout: 10000,

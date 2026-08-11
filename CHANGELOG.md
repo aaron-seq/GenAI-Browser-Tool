@@ -5,6 +5,28 @@ All notable changes to the GenAI Browser Tool project will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **The coverage gate enforced nothing.** Thresholds were nested under a
+  `global` key — the Jest shape. Vitest reads them flat and treated `global` as
+  a glob matching no file, so `test:coverage` reported success while the suite
+  sat below the 70% it claimed to require. Now flat, enforced, and set to the
+  level the suite actually holds.
+- Coverage now reports on every shipped source file (`all: true`). Files no test
+  imported were previously absent from the table entirely, which read as "fine"
+  rather than "uncovered".
+
+### Added
+- Unit tests for the three DOM controllers that had no unit coverage at all:
+  `content.js` 0% → 96%, `options.js` 0% → 99%, `scripts/popup-main.js`
+  33% → 84%. Overall 63% → 84%.
+- A regression guard asserting `content.js` stays free of ESM syntax. A
+  declarative MV3 content script is a *classic* script, so an `export` there is
+  a parse error that silently stops all extraction — caught previously only by
+  a full browser launch, now in a millisecond.
+- Tests for `utils/logger.js` level filtering (0 → 100%).
+
 ## [5.1.0]
 
 ### Added
