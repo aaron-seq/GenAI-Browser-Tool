@@ -1,10 +1,6 @@
 # Dependencies
 /node_modules
 
-# Build files
-/dist
-/build
-
 # Test output
 /coverage
 /playwright-report

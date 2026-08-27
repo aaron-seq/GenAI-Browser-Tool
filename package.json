@@ -4,18 +4,16 @@
   "description": "Chrome extension that summarizes, questions, translates, and analyses the current page using an AI provider and API key you supply.",
   "type": "module",
   "scripts": {
-    "build": "rollup -c rollup.extension.config.js",
-    "dev": "rollup -c rollup.extension.config.js --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint . --ext .js,.ts,.json",
-    "lint:fix": "eslint . --ext .js,.ts,.json --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,ts,json,css,html,md}\"",
     "typecheck": "tsc --noEmit",
     "verify": "npm run lint && npm run typecheck && npm run test",
-    "prepare": "husky install"
+    "prepare": "husky"
   },
   "keywords": [
     "ai",
@@ -39,45 +37,34 @@
   },
   "homepage": "https://github.com/aaron-seq/GenAI-Browser-Tool#readme",
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "node": ">=20.19.0",
+    "npm": ">=10.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.40.1",
-    "@rollup/plugin-commonjs": "^25.0.7",
-    "@rollup/plugin-json": "^6.0.1",
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-terser": "^0.4.4",
-    "@rollup/plugin-typescript": "^11.1.5",
-    "@types/chrome": "^0.0.251",
-    "@types/jsdom": "^27.0.0",
-    "@types/node": "^20.10.4",
-    "@typescript-eslint/eslint-plugin": "^6.14.0",
-    "@typescript-eslint/parser": "^6.14.0",
-    "@vitest/coverage-v8": "^1.0.4",
-    "eslint": "^8.55.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-import": "^2.29.0",
-    "eslint-plugin-prettier": "^5.0.1",
-    "eslint-plugin-security": "^1.7.1",
-    "husky": "^8.0.3",
-    "jsdom": "^23.0.1",
-    "lint-staged": "^15.2.0",
-    "prettier": "^3.1.1",
-    "rollup": "^4.7.0",
-    "tslib": "^2.8.1",
-    "typescript": "^5.3.3",
-    "vitest": "^1.0.4"
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
+    "@types/chrome": "^0.2.7",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^10.9.1",
+    "globals": "^16.5.0",
+    "husky": "^9.1.7",
+    "jsdom": "^29.1.1",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   },
   "comments": {
-    "dependencies": "The extension ships zero runtime dependencies. It uses fetch, chrome.* APIs, and the DOM only. tslib is a devDependency required by @rollup/plugin-typescript."
+    "dependencies": "The extension ships zero runtime dependencies: fetch, chrome.* APIs, and the DOM only. It also has no build step \u2014 the repository root is the loadable extension, so packaging is a zip of the root."
   },
   "lint-staged": {
-    "*.{js,ts}": [
+    "*.js": [
       "eslint --fix",
       "prettier --write"
     ],
-    "*.{json,css,html,md}": [
+    "*.{json,css,html,md,yml}": [
       "prettier --write"
     ]
   },
@@ -87,7 +74,16 @@
     "Edge >= 88"
   ],
   "files": [
-    "dist/**/*",
+    "*.js",
+    "*.html",
+    "*.css",
+    "assets/**/*",
+    "core/**/*",
+    "providers/**/*",
+    "scripts/**/*",
+    "services/**/*",
+    "styles/**/*",
+    "utils/**/*",
     "manifest.json",
     "README.md",
     "LICENSE"
