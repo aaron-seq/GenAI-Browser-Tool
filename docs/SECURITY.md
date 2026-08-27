@@ -6,9 +6,12 @@ We actively support the following versions with security updates:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 4.1.x   | :white_check_mark: |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| 5.2.x   | :white_check_mark: |
+| 5.1.x   | :white_check_mark: |
+| < 5.1   | :x:                |
+
+Versions before 5.0 shipped stub AI providers and are not a supported
+configuration.
 
 ## Reporting a Vulnerability
 
@@ -56,12 +59,26 @@ is limited to the three provider hosts declared in `host_permissions`.
 
 ### Input validation
 
-- **Message validation** (`src/utils/validation-service.js`): every
-  `chrome.runtime` message must carry a string `actionType` from a known set and
-  a valid sender, or it is rejected before any work is done.
+- **Message validation** (`utils/validation-service.js`): every
+  `chrome.runtime` message must be an object carrying a non-empty string
+  `actionType` and a sender whose id is this extension's own, or it is rejected
+  before any work is done. An `actionType` that is well formed but unrecognised
+  is rejected by the router's `default` case, still before any work — the list
+  of valid actions lives in exactly one place rather than being mirrored here.
 - **Content length cap**: page text is clipped to 24,000 characters
   (`MAX_CONTENT_CHARS`) before being sent to a provider.
-- **Question length cap**: 1,000 characters.
+- **Question length cap**: 1,000 characters. This bounds token spend; it is not
+  a security boundary.
+
+  There is deliberately **no content filter on questions**. An earlier version
+  rejected questions matching patterns like `/<iframe/` and `/on\w+\s*=/`. It
+  held those patterns as instance fields carrying the `g` flag and tested them
+  with `RegExp.prototype.test`, which advances `lastIndex` on a global regex — so
+  the same question was blocked, then allowed, then blocked, depending only on
+  how many times the function had been called. It also rejected ordinary
+  questions such as "Is there only one=1 result?". A question is the user's own
+  text, is never evaluated, and reaches the DOM only through `renderMarkdown`,
+  which escapes; the filter added no protection and cost real functionality.
 - **Output escaping**: model output is escaped with `escapeHtml()` *before* the
   small markdown subset is applied, so no tag or attribute from page-derived
   text can reach the DOM as markup. Covered by tests in

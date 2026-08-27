@@ -1,59 +1,50 @@
 import { defineConfig } from 'vitest/config';
-import { resolve } from 'path';
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./tests/setup.js'],
-    include: [
-      'tests/**/*.{test,spec}.{js,ts}',
-      'src/**/*.{test,spec}.{js,ts}',
-      '**/__tests__/**/*.{js,ts}'
-    ],
-    exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/cypress/**',
-      '**/.{idea,git,cache,output,temp}/**',
-      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*',
-      'tests/e2e/**'
-    ],
+
+    // Playwright owns tests/e2e; running those specs under Vitest would try to
+    // launch a browser from inside jsdom.
+    include: ['tests/**/*.test.js'],
+
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      exclude: [
-        'coverage/**',
-        'dist/**',
-        '**/node_modules/**',
-        '**/tests/**',
-        '**/*.config.*',
-        '**/*.d.ts'
+
+      // Listed explicitly rather than left to inference. Vitest only reports
+      // files a test imported, so a file with no tests at all silently vanished
+      // from the report and *raised* the percentage — the opposite of what a
+      // coverage gate is for. Naming the shipped source keeps an untested file
+      // visible at 0%.
+      include: [
+        'background.js',
+        'content.js',
+        'options.js',
+        'core/**/*.js',
+        'providers/**/*.js',
+        'scripts/**/*.js',
+        'services/**/*.js',
+        'utils/**/*.js'
       ],
+
+      // Flat keys. These lived under a `thresholds.global` object, which is the
+      // c8/Vitest 0.x shape; Vitest ignored it entirely, so the gate reported
+      // 63% against a 70% threshold and still exited 0.
+      //
+      // Set a few points under what the suite actually achieves, so an ordinary
+      // refactor does not fail CI but a real regression does.
       thresholds: {
-        global: {
-          branches: 70,
-          functions: 70,
-          lines: 70,
-          statements: 70
-        }
+        branches: 72,
+        functions: 85,
+        lines: 88,
+        statements: 85
       }
     },
+
     testTimeout: 10000,
-    hookTimeout: 10000,
-    teardownTimeout: 5000
-  },
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, '.'),
-      '@/core': resolve(__dirname, 'core'),
-      '@/services': resolve(__dirname, 'services'),
-      '@/utils': resolve(__dirname, 'utils'),
-      '@/providers': resolve(__dirname, 'providers')
-    }
-  },
-  define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'test'),
-    global: 'globalThis'
+    hookTimeout: 10000
   }
 });

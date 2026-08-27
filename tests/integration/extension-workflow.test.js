@@ -34,14 +34,22 @@ const CONFIGURED = {
  * @param {any} payload
  * @returns {Promise<any>}
  */
-function dispatch(actionType, payload) {
+/**
+ * @param {string} actionType
+ * @param {any} payload
+ * @param {number} [timeout]  Raise when the path under test exhausts retries.
+ */
+function dispatch(actionType, payload, timeout = 1000) {
   const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
   const sendResponse = vi.fn();
   handler({ actionType, requestId: 'req-1', payload }, { id: 'mock-extension-id' }, sendResponse);
-  return vi.waitFor(() => {
-    expect(sendResponse).toHaveBeenCalled();
-    return sendResponse.mock.calls[0][0];
-  });
+  return vi.waitFor(
+    () => {
+      expect(sendResponse).toHaveBeenCalled();
+      return sendResponse.mock.calls[0][0];
+    },
+    { timeout }
+  );
 }
 
 describe('Extension workflow', () => {
@@ -90,6 +98,46 @@ describe('Extension workflow', () => {
       );
     });
 
+    it('summarizes a long page as sections plus one merge, not a truncation', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+
+      // Three chunks' worth of paragraphs.
+      const longPage = Array.from({ length: 80 }, (_, i) =>
+        `Paragraph ${i}. ${'word '.repeat(180)}`
+      ).join('\n\n');
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', {
+        content: longPage,
+        summaryType: 'key-points'
+      });
+
+      expect(response.success).toBe(true);
+      expect(response.data.sections).toBeGreaterThan(1);
+      expect(response.data.droppedChars).toBe(0);
+      expect(response.data.truncated).toBe(false);
+
+      // One request per section, plus a final merge.
+      expect(global.fetch).toHaveBeenCalledTimes(response.data.sections + 1);
+
+      const bodies = global.fetch.mock.calls.map(call => JSON.parse(call[1].body));
+      const mapCalls = bodies.filter(b => b.system.includes('You are reading section'));
+      const reduceCalls = bodies.filter(b => b.system.includes('You are given ordered notes'));
+      expect(mapCalls).toHaveLength(response.data.sections);
+      expect(reduceCalls).toHaveLength(1);
+
+      // The merge step reads our own notes, so it is not fenced as untrusted.
+      expect(reduceCalls[0].messages[0].content).not.toContain('<<<PAGE_CONTENT>>>');
+    });
+
+    it('still issues exactly one call for a page that fits', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', { content: 'A short article.' });
+
+      expect(response.data.sections).toBe(1);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects empty content before spending an API call', async () => {
       global.fetch.mockResolvedValue(CLAUDE_REPLY);
 
@@ -112,18 +160,46 @@ describe('Extension workflow', () => {
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    it('surfaces a provider failure rather than a plausible fake answer', async () => {
+    it('retries a rate limit, then surfaces it rather than a fake answer', async () => {
       global.fetch.mockResolvedValue({
         ok: false,
         status: 429,
         statusText: 'Too Many Requests',
+        headers: { get: () => null },
         json: vi.fn().mockResolvedValue({ error: { message: 'rate limit exceeded' } })
       });
 
-      const response = await dispatch('GENERATE_CONTENT_SUMMARY', { content: 'article text' });
+      const response = await dispatch(
+        'GENERATE_CONTENT_SUMMARY',
+        { content: 'article text' },
+        10000
+      );
 
       expect(response.success).toBe(false);
       expect(response.error).toContain('rate limit exceeded');
+      // Retried before giving up, rather than failing on the first 429.
+      expect(global.fetch.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it('recovers from a transient rate limit without the user seeing it', async () => {
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          statusText: 'Too Many Requests',
+          headers: { get: () => null },
+          json: vi.fn().mockResolvedValue({ error: { message: 'slow down' } })
+        })
+        .mockResolvedValue(CLAUDE_REPLY);
+
+      const response = await dispatch(
+        'GENERATE_CONTENT_SUMMARY',
+        { content: 'article text' },
+        10000
+      );
+
+      expect(response.success).toBe(true);
+      expect(response.data.summary).toBe('- point one\n- point two');
     });
   });
 
@@ -152,6 +228,104 @@ describe('Extension workflow', () => {
 
       expect(response.success).toBe(false);
       expect(response.errorCode).toBe('NO_TAB');
+    });
+  });
+
+  describe('the message boundary', () => {
+    /**
+     * `dispatch` always sends a well-formed message from this extension. These
+     * go around it to exercise what the router rejects.
+     *
+     * @param {any} message
+     * @param {any} sender
+     */
+    function dispatchRaw(message, sender) {
+      const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
+      const sendResponse = vi.fn();
+      handler(message, sender, sendResponse);
+      return vi.waitFor(() => {
+        expect(sendResponse).toHaveBeenCalled();
+        return sendResponse.mock.calls[0][0];
+      });
+    }
+
+    const self = { id: 'mock-extension-id' };
+
+    it.each([
+      ['a null message', null, self],
+      ['a message with no actionType', { requestId: 'r' }, self],
+      ['a non-string actionType', { actionType: 7 }, self],
+      ['no sender at all', { actionType: 'GET_HISTORY' }, null],
+      ['a sender that is not this extension', { actionType: 'GET_HISTORY' }, { id: 'other' }]
+    ])('rejects %s', async (_label, message, sender) => {
+      const response = await dispatchRaw(message, sender);
+
+      expect(response.success).toBe(false);
+      expect(response.errorCode).toBe('INVALID_MESSAGE');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects an actionType it does not route, without spending a call', async () => {
+      const response = await dispatch('DO_SOMETHING_ELSE', {});
+
+      expect(response.success).toBe(false);
+      expect(response.errorCode).toBe('UNSUPPORTED_ACTION');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('question validation', () => {
+    it.each([
+      ['an empty question', ''],
+      ['a whitespace-only question', '   \n '],
+      ['a missing question', undefined],
+      ['a question past the 1,000 character cap', 'x'.repeat(1001)]
+    ])('rejects %s before calling a provider', async (_label, question) => {
+      const response = await dispatch('ANSWER_CONTEXTUAL_QUESTION', {
+        question,
+        context: 'page text'
+      });
+
+      expect(response.success).toBe(false);
+      expect(response.errorCode).toBe('INVALID_QUESTION');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    // Regression: the filter that used to guard this rejected ordinary
+    // questions, and returned a different verdict depending on how many times
+    // it had been called. Both are asserted directly in
+    // tests/utils/validation-service.test.js; this pins the end-to-end path.
+    it.each([
+      'Is there only one=1 result?',
+      'What is the <iframe> for?',
+      'What does the onclick= attribute do on this page?'
+    ])('answers the legitimate question %j', async question => {
+      global.fetch.mockResolvedValue(
+        okResponse({ content: [{ type: 'text', text: 'An answer.' }] })
+      );
+
+      const response = await dispatch('ANSWER_CONTEXTUAL_QUESTION', {
+        question,
+        context: 'page text'
+      });
+
+      expect(response.success).toBe(true);
+      expect(response.data.answer).toBe('An answer.');
+    });
+
+    it('accepts the same question repeatedly', async () => {
+      global.fetch.mockResolvedValue(
+        okResponse({ content: [{ type: 'text', text: 'An answer.' }] })
+      );
+      const question = 'What does javascript: mean here?';
+
+      for (let i = 0; i < 3; i++) {
+        const response = await dispatch('ANSWER_CONTEXTUAL_QUESTION', {
+          question,
+          context: 'page text'
+        });
+        expect(response.success).toBe(true);
+      }
     });
   });
 
@@ -239,6 +413,61 @@ describe('Extension workflow', () => {
       await clickHandler({ menuItemId: 'some-other-extension-item' }, { id: 1 });
 
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('export', () => {
+    beforeEach(() => {
+      chrome.storage.local.get.mockImplementation(async (/** @type {string[]} */ keys) =>
+        Object.fromEntries(
+          keys
+            .filter(key => key === 'genai_summary_history')
+            .map(key => [key, [{ id: 'sum-1', summary: 'a saved summary' }]])
+        )
+      );
+    });
+
+    // Regression: the export was built from a `genai_user_preferences` key in
+    // local storage that nothing ever wrote, so it reported that key's
+    // hardcoded defaults — `aiProvider: 'chrome-ai'`, a provider removed in
+    // 5.0.0 — and never the settings the user had actually chosen.
+    it('reports the settings the user actually chose', async () => {
+      const response = await dispatch('EXPORT_USER_DATA', {});
+
+      expect(response.success).toBe(true);
+      expect(response.data.settings).toMatchObject({
+        preferredProvider: 'anthropic',
+        summaryType: 'key-points'
+      });
+      expect(response.data.settings).not.toHaveProperty('aiProvider');
+    });
+
+    it('never includes API keys', async () => {
+      const response = await dispatch('EXPORT_USER_DATA', {});
+
+      expect(response.data.settings).not.toHaveProperty('apiKeys');
+      expect(JSON.stringify(response.data)).not.toContain('sk-ant-test');
+    });
+
+    it('includes saved history', async () => {
+      const response = await dispatch('EXPORT_USER_DATA', {});
+
+      expect(response.data.summaries).toEqual([
+        expect.objectContaining({ summary: 'a saved summary' })
+      ]);
+      expect(response.data.conversations).toEqual([]);
+    });
+
+    // Regression: this returned a JSON *string*, which the popup then stringified
+    // again, so the downloaded file was a quoted string literal containing
+    // escaped JSON rather than a JSON document.
+    it('returns an object so the popup serialises it exactly once', async () => {
+      const response = await dispatch('EXPORT_USER_DATA', {});
+
+      expect(typeof response.data).toBe('object');
+      expect(JSON.parse(JSON.stringify(response.data, null, 2))).toMatchObject({
+        schemaVersion: expect.any(Number)
+      });
     });
   });
 });

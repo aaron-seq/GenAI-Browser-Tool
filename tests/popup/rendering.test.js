@@ -3,7 +3,8 @@ import {
   renderMarkdown,
   escapeHtml,
   countWords,
-  readabilityScore
+  readabilityScore,
+  describeCoverage
 } from '../../scripts/popup-main.js';
 
 describe('popup rendering', () => {
@@ -64,6 +65,27 @@ describe('popup rendering', () => {
       expect(countWords('')).toBe(0);
       expect(countWords('   ')).toBe(0);
       expect(countWords(undefined)).toBe(0);
+    });
+  });
+
+  describe('describeCoverage', () => {
+    // A summary of a huge page that silently used only the first slice is
+    // indistinguishable from a complete one, so coverage is always stated.
+    it('says the whole page for a single-request summary', () => {
+      expect(describeCoverage({ sections: 1, droppedChars: 0 })).toBe('Whole page');
+      expect(describeCoverage({})).toBe('Whole page');
+    });
+
+    it('reports how many sections a long page was split into', () => {
+      expect(describeCoverage({ sections: 5, droppedChars: 0 })).toBe(
+        'Whole page, summarized across 5 sections'
+      );
+    });
+
+    it('says plainly when content was left out', () => {
+      const text = describeCoverage({ sections: 8, droppedChars: 51000 });
+      expect(text).toMatch(/not included/);
+      expect(text).toContain('51,000');
     });
   });
 
