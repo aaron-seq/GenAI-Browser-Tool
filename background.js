@@ -15,7 +15,7 @@ import {
 import { AIError } from './providers/ai-client.js';
 import { StorageService } from './services/storage-service.js';
 import { NotificationManager } from './services/notification-manager.js';
-import { ValidationService } from './src/utils/validation-service.js';
+import { isValidQuestion, validateMessage } from './utils/validation-service.js';
 import { Logger } from './utils/logger.js';
 
 /**
@@ -44,7 +44,6 @@ class BackgroundService {
     this.configManager = new ConfigurationManager();
     this.storageService = new StorageService();
     this.notificationManager = new NotificationManager();
-    this.validator = new ValidationService();
 
     this.registerListeners();
     this.initialize();
@@ -90,7 +89,7 @@ class BackgroundService {
     const requestId = message?.requestId;
 
     try {
-      if (!this.validator.validateMessage(message, sender)) {
+      if (!validateMessage(message, sender)) {
         throw new AIError('INVALID_MESSAGE', 'Malformed message or unknown sender');
       }
 
@@ -290,7 +289,7 @@ class BackgroundService {
 
   /** @param {any} payload */
   async answerQuestion(payload) {
-    if (!this.validator.isValidQuestion(payload.question)) {
+    if (!isValidQuestion(payload.question)) {
       throw new AIError('INVALID_QUESTION', 'Question is empty or too long');
     }
 
