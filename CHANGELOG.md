@@ -5,6 +5,46 @@ All notable changes to the GenAI Browser Tool project will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0]
+
+### Added
+- **Automatic retry on transient provider failures.** `429`, `5xx`, and network
+  blips are retried twice with exponential backoff and jitter, honouring
+  `Retry-After`. Errors meaning the request itself is wrong (`400`, `401`,
+  `403`, `404`) are never retried — that burns quota and delays the message the
+  user needs. Timeouts are not retried either, since the request may still be
+  running provider side.
+
+  This became necessary because of chunking below: turning one request into up
+  to nine meant a single transient failure discarded every section that had
+  already succeeded.
+- **Bounded section concurrency.** Sections are summarized three at a time
+  rather than all at once. Firing eight simultaneous requests is a reliable way
+  to trip the per-minute rate limit and fail exactly the long pages the feature
+  exists for.
+- Chat now states, once per session, when a page is too long to fit a single
+  request, so an answer drawn from part of a page never looks exhaustive.
+- **Chunked summarization.** Pages over 24,000 characters are split on paragraph
+  boundaries, summarized section by section, and merged into one summary instead
+  of being silently truncated. Capped at 8 sections (9 requests) so one click
+  cannot run away with an API budget; the popup always states the coverage it
+  achieved.
+- Entity extraction is now reachable from the Analyze tab. The backend action
+  existed but no button called it.
+- Translation honours the "From" language selector, which was previously only
+  used by the swap button and never sent to the provider.
+
+### Fixed
+- The popup ignored saved preferences. Summary style, summary length, target
+  language, and theme were stored by the options page but never applied, so
+  changing them appeared to do nothing.
+- Theme choice is now persisted rather than reset on every popup open.
+
+### Removed
+- Four controls with no handler behind them: "Save Summary", "Speak", "Create
+  Bookmark", and the "Preserve formatting" checkbox. Summaries are already saved
+  to history automatically when generated.
+
 ## [5.0.0]
 
 Makes the extension actually perform AI work. Prior versions shipped stub

@@ -34,14 +34,22 @@ const CONFIGURED = {
  * @param {any} payload
  * @returns {Promise<any>}
  */
-function dispatch(actionType, payload) {
+/**
+ * @param {string} actionType
+ * @param {any} payload
+ * @param {number} [timeout]  Raise when the path under test exhausts retries.
+ */
+function dispatch(actionType, payload, timeout = 1000) {
   const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
   const sendResponse = vi.fn();
   handler({ actionType, requestId: 'req-1', payload }, { id: 'mock-extension-id' }, sendResponse);
-  return vi.waitFor(() => {
-    expect(sendResponse).toHaveBeenCalled();
-    return sendResponse.mock.calls[0][0];
-  });
+  return vi.waitFor(
+    () => {
+      expect(sendResponse).toHaveBeenCalled();
+      return sendResponse.mock.calls[0][0];
+    },
+    { timeout }
+  );
 }
 
 describe('Extension workflow', () => {
@@ -90,6 +98,46 @@ describe('Extension workflow', () => {
       );
     });
 
+    it('summarizes a long page as sections plus one merge, not a truncation', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+
+      // Three chunks' worth of paragraphs.
+      const longPage = Array.from({ length: 80 }, (_, i) =>
+        `Paragraph ${i}. ${'word '.repeat(180)}`
+      ).join('\n\n');
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', {
+        content: longPage,
+        summaryType: 'key-points'
+      });
+
+      expect(response.success).toBe(true);
+      expect(response.data.sections).toBeGreaterThan(1);
+      expect(response.data.droppedChars).toBe(0);
+      expect(response.data.truncated).toBe(false);
+
+      // One request per section, plus a final merge.
+      expect(global.fetch).toHaveBeenCalledTimes(response.data.sections + 1);
+
+      const bodies = global.fetch.mock.calls.map(call => JSON.parse(call[1].body));
+      const mapCalls = bodies.filter(b => b.system.includes('You are reading section'));
+      const reduceCalls = bodies.filter(b => b.system.includes('You are given ordered notes'));
+      expect(mapCalls).toHaveLength(response.data.sections);
+      expect(reduceCalls).toHaveLength(1);
+
+      // The merge step reads our own notes, so it is not fenced as untrusted.
+      expect(reduceCalls[0].messages[0].content).not.toContain('<<<PAGE_CONTENT>>>');
+    });
+
+    it('still issues exactly one call for a page that fits', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', { content: 'A short article.' });
+
+      expect(response.data.sections).toBe(1);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects empty content before spending an API call', async () => {
       global.fetch.mockResolvedValue(CLAUDE_REPLY);
 
@@ -112,18 +160,46 @@ describe('Extension workflow', () => {
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    it('surfaces a provider failure rather than a plausible fake answer', async () => {
+    it('retries a rate limit, then surfaces it rather than a fake answer', async () => {
       global.fetch.mockResolvedValue({
         ok: false,
         status: 429,
         statusText: 'Too Many Requests',
+        headers: { get: () => null },
         json: vi.fn().mockResolvedValue({ error: { message: 'rate limit exceeded' } })
       });
 
-      const response = await dispatch('GENERATE_CONTENT_SUMMARY', { content: 'article text' });
+      const response = await dispatch(
+        'GENERATE_CONTENT_SUMMARY',
+        { content: 'article text' },
+        10000
+      );
 
       expect(response.success).toBe(false);
       expect(response.error).toContain('rate limit exceeded');
+      // Retried before giving up, rather than failing on the first 429.
+      expect(global.fetch.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it('recovers from a transient rate limit without the user seeing it', async () => {
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          statusText: 'Too Many Requests',
+          headers: { get: () => null },
+          json: vi.fn().mockResolvedValue({ error: { message: 'slow down' } })
+        })
+        .mockResolvedValue(CLAUDE_REPLY);
+
+      const response = await dispatch(
+        'GENERATE_CONTENT_SUMMARY',
+        { content: 'article text' },
+        10000
+      );
+
+      expect(response.success).toBe(true);
+      expect(response.data.summary).toBe('- point one\n- point two');
     });
   });
 

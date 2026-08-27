@@ -1,6 +1,6 @@
 {
   "name": "genai-browser-tool",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "Chrome extension that summarizes, questions, translates, and analyses the current page using an AI provider and API key you supply.",
   "type": "module",
   "scripts": {

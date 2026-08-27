@@ -107,6 +107,24 @@ export class AIError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 60000;
 
+/** Attempts after the first, for transient failures only. */
+const DEFAULT_MAX_RETRIES = 2;
+
+/**
+ * Statuses worth retrying: rate limits, gateway hiccups, and provider overload.
+ *
+ * 4xx codes that mean "this request is wrong" (400, 401, 403, 404) are absent
+ * deliberately — retrying them burns quota and delays an error the user needs
+ * to see. 529 is Anthropic's overloaded status.
+ */
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529]);
+
+const BASE_BACKOFF_MS = 500;
+const MAX_BACKOFF_MS = 8000;
+
+/** @param {number} ms */
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 export class AIClient {
   /**
    * @param {Object} options
@@ -114,8 +132,15 @@ export class AIClient {
    * @param {string} options.apiKey
    * @param {string} [options.model]   Overrides the provider default.
    * @param {number} [options.timeoutMs]
+   * @param {number} [options.maxRetries] Retries for transient failures only.
    */
-  constructor({ provider, apiKey, model, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  constructor({
+    provider,
+    apiKey,
+    model,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    maxRetries = DEFAULT_MAX_RETRIES
+  }) {
     const spec = PROVIDERS[provider];
     if (!spec) {
       throw new AIError('UNKNOWN_PROVIDER', `Unknown AI provider: ${provider}`);
@@ -132,6 +157,7 @@ export class AIClient {
     this.apiKey = apiKey;
     this.model = model || spec.defaultModel;
     this.timeoutMs = timeoutMs;
+    this.maxRetries = maxRetries;
   }
 
   /**
@@ -143,6 +169,29 @@ export class AIClient {
    * @returns {Promise<string>}
    */
   async complete(systemPrompt, userPrompt, maxTokens = 1024) {
+    const body = JSON.stringify(
+      this.spec.body(systemPrompt, userPrompt, this.model, maxTokens)
+    );
+
+    for (let attempt = 0; ; attempt++) {
+      const outcome = await this.attempt(body);
+
+      if (outcome.ok) return outcome.text;
+      if (!outcome.retryable || attempt >= this.maxRetries) throw outcome.error;
+
+      await sleep(backoffDelay(attempt, outcome.retryAfterMs));
+    }
+  }
+
+  /**
+   * One request. Reports whether a failure is worth retrying instead of
+   * throwing, so the caller owns the retry policy.
+   *
+   * @param {string} body
+   * @returns {Promise<{ ok: true, text: string } |
+   *   { ok: false, retryable: boolean, error: AIError, retryAfterMs?: number }>}
+   */
+  async attempt(body) {
     const { spec } = this;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -152,30 +201,82 @@ export class AIClient {
       response = await fetch(spec.url(this.model), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...spec.headers(this.apiKey) },
-        body: JSON.stringify(spec.body(systemPrompt, userPrompt, this.model, maxTokens)),
+        body,
         signal: controller.signal
       });
     } catch (error) {
       /** @type {any} */
       const err = error;
       if (err.name === 'AbortError') {
-        throw new AIError('TIMEOUT', `${spec.label} did not respond within ${this.timeoutMs}ms`);
+        // A timeout is not retried: the request may still be running provider
+        // side, and retrying risks paying for the same work twice.
+        return {
+          ok: false,
+          retryable: false,
+          error: new AIError('TIMEOUT', `${spec.label} did not respond within ${this.timeoutMs}ms`)
+        };
       }
-      throw new AIError('NETWORK_ERROR', `Could not reach ${spec.label}: ${err.message}`);
+      return {
+        ok: false,
+        retryable: true,
+        error: new AIError('NETWORK_ERROR', `Could not reach ${spec.label}: ${err.message}`)
+      };
     } finally {
       clearTimeout(timer);
     }
 
     if (!response.ok) {
-      throw new AIError(
-        response.status === 401 || response.status === 403 ? 'AUTH_ERROR' : 'PROVIDER_ERROR',
-        // The provider's own message is the useful part; it never contains the key.
-        `${spec.label} returned ${response.status}: ${await readErrorMessage(response)}`
-      );
+      const retryable = RETRYABLE_STATUSES.has(response.status);
+      const result = {
+        ok: /** @type {false} */ (false),
+        retryable,
+        error: new AIError(
+          response.status === 401 || response.status === 403 ? 'AUTH_ERROR' : 'PROVIDER_ERROR',
+          // The provider's own message is the useful part; it never contains the key.
+          `${spec.label} returned ${response.status}: ${await readErrorMessage(response)}`
+        )
+      };
+      const retryAfterMs = parseRetryAfter(response.headers?.get('retry-after'));
+      return retryAfterMs === undefined ? result : { ...result, retryAfterMs };
     }
 
-    return spec.parse(await response.json()).trim();
+    return { ok: true, text: spec.parse(await response.json()).trim() };
   }
+}
+
+/**
+ * How long to wait before the next attempt.
+ *
+ * A provider's own `Retry-After` beats our guess. Otherwise exponential backoff
+ * with jitter, so several sections retrying at once do not resynchronise into
+ * another burst against the same rate limit.
+ *
+ * @param {number} attempt  Zero-based index of the attempt that just failed.
+ * @param {number} [retryAfterMs]
+ * @returns {number}
+ */
+export function backoffDelay(attempt, retryAfterMs) {
+  if (retryAfterMs !== undefined) return Math.min(retryAfterMs, MAX_BACKOFF_MS);
+
+  const exponential = Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS);
+  return exponential + Math.random() * BASE_BACKOFF_MS;
+}
+
+/**
+ * Parse a `Retry-After` header, which may be seconds or an HTTP date.
+ *
+ * @param {string | null | undefined} value
+ * @returns {number | undefined} Milliseconds, or undefined if absent/unparseable.
+ */
+export function parseRetryAfter(value) {
+  if (!value) return undefined;
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+
+  const date = Date.parse(value);
+  if (Number.isNaN(date)) return undefined;
+  return Math.max(0, date - Date.now());
 }
 
 /**
