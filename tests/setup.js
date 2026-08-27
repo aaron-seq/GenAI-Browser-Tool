@@ -1,25 +1,24 @@
 /**
- * Test setup configuration for GenAI Browser Tool
- * Configures global test environment, mocks, and utilities
+ * Global test setup: the `chrome.*` surface the extension talks to, and a fetch
+ * stub so no test can reach a real provider.
+ *
+ * The DOM comes from Vitest's `environment: 'jsdom'`. This file used to build a
+ * *second* JSDOM and assign it over `global.window` / `global.document`, which
+ * left the environment split: `document` came from the manual instance while
+ * `Event`, `HTMLElement`, and `confirm` still came from Vitest's. Stubbing
+ * `window.confirm` then had no effect on the bare `confirm()` a page actually
+ * calls, and a listener attached to one `document` never saw the other's events.
  */
 
 import { vi, afterEach } from 'vitest';
-import { JSDOM } from 'jsdom';
 
-// Mock Chrome extension APIs
 /** @type {any} */
 const mockChrome = {
   runtime: {
-    onMessage: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      hasListener: vi.fn()
-    },
-    onInstalled: {
-      addListener: vi.fn()
-    },
+    onMessage: { addListener: vi.fn(), removeListener: vi.fn(), hasListener: vi.fn() },
+    onInstalled: { addListener: vi.fn() },
     sendMessage: vi.fn(),
-    getURL: vi.fn((path) => `chrome-extension://mock-id/${path}`),
+    getURL: vi.fn(path => `chrome-extension://mock-extension-id/${path}`),
     openOptionsPage: vi.fn(),
     id: 'mock-extension-id'
   },
@@ -41,95 +40,30 @@ const mockChrome = {
     query: vi.fn().mockResolvedValue([]),
     get: vi.fn().mockResolvedValue({}),
     sendMessage: vi.fn(),
-    onUpdated: {
-      addListener: vi.fn()
-    },
-    onActivated: {
-      addListener: vi.fn()
-    }
+    onUpdated: { addListener: vi.fn() },
+    onActivated: { addListener: vi.fn() }
   },
   contextMenus: {
     create: vi.fn(),
     removeAll: vi.fn().mockResolvedValue(undefined),
-    onClicked: {
-      addListener: vi.fn()
-    }
+    onClicked: { addListener: vi.fn() }
   },
-  commands: {
-    onCommand: {
-      addListener: vi.fn()
-    }
-  },
-  notifications: {
-    create: vi.fn(),
-    clear: vi.fn()
-  },
-  alarms: {
-    create: vi.fn(),
-    clear: vi.fn(),
-    onAlarm: {
-      addListener: vi.fn()
-    }
-  },
-  scripting: {
-    executeScript: vi.fn().mockResolvedValue([{ result: {} }])
-  }
+  commands: { onCommand: { addListener: vi.fn() } },
+  notifications: { create: vi.fn(), clear: vi.fn() },
+  alarms: { create: vi.fn(), clear: vi.fn(), onAlarm: { addListener: vi.fn() } },
+  scripting: { executeScript: vi.fn().mockResolvedValue([{ result: {} }]) }
 };
 
-// Setup global chrome API mock
-global.chrome = mockChrome;
+globalThis.chrome = mockChrome;
+globalThis.fetch = vi.fn();
 
-// Mock fetch for API calls
-global.fetch = vi.fn();
-
-// Setup DOM environment
-const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
-  url: 'http://localhost:3000',
-  pretendToBeVisual: true,
-  resources: 'usable'
+// jsdom implements neither, and both are reached by code under test.
+globalThis.confirm = vi.fn(() => true);
+Object.defineProperty(globalThis.navigator, 'clipboard', {
+  configurable: true,
+  value: { writeText: vi.fn().mockResolvedValue(undefined) }
 });
 
-global.window = /** @type {any} */ (dom.window);
-global.document = dom.window.document;
-global.navigator = /** @type {any} */ (dom.window.navigator);
-global.HTMLElement = dom.window.HTMLElement;
-
-// Mock console methods in test environment
-if (process.env['NODE_ENV'] === 'test') {
-  global.console = {
-    ...console,
-    log: vi.fn(),
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn()
-  };
-}
-
-// Setup performance mock
-/** @type {any} */
-global.performance = {
-  now: vi.fn(() => Date.now()),
-  mark: vi.fn(),
-  measure: vi.fn()
-};
-
-// Cleanup function for tests
-export const cleanup = () => {
-  vi.clearAllMocks();
-  // Reset chrome API mocks
-  Object.values(mockChrome).forEach(api => {
-    if (typeof api === 'object' && api !== null) {
-      Object.values(api).forEach(method => {
-        if (typeof method?.mockClear === 'function') {
-          method.mockClear();
-        }
-      });
-    }
-  });
-};
-
-// Auto cleanup after each test
 afterEach(() => {
-  cleanup();
+  vi.clearAllMocks();
 });
