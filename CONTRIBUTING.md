@@ -68,9 +68,10 @@ npm run test:e2e # Playwright E2E
 npm run lint     # ESLint
 npm run typecheck# tsc --noEmit over shipped source (must be zero errors)
 npm run format   # Prettier
-npm run build    # Bundle to dist/ for packaging
-npm run dev      # Rollup watch (only to test bundled output)
 ```
+
+There is no build step. The repository root is the loadable extension, and
+packaging is a zip of the root. Requires Node 20.19 or newer.
 
 ## Project Structure
 
@@ -87,8 +88,7 @@ GenAI-Browser-Tool/
 │   └── ai-client.js              # one fetch client, shaped per provider
 ├── scripts/popup-main.js    # popup logic
 ├── services/                # storage, notifications
-├── src/utils/               # validation
-├── utils/logger.js
+├── utils/                   # logger, validation
 ├── styles/                  # popup CSS
 ├── tests/                   # unit, integration, and e2e tests
 ├── docs/                    # DEVELOPMENT.md, SECURITY.md
@@ -232,7 +232,7 @@ Pre‑flight:
 - [ ] Lint, typecheck, tests pass locally
 - [ ] Updated README/docs for user‑facing changes
 - [ ] Added/updated tests
-- [ ] No bundle bloat (verify `dist/` size delta)
+- [ ] Coverage did not regress (`npm run test:coverage` enforces a threshold)
 
 PR Description Template:
 ```markdown
@@ -278,10 +278,12 @@ We use SemVer and align `manifest.json` version with `package.json`.
 Steps:
 1. Update versions: `npm version patch|minor|major`
 2. Update CHANGELOG.md
-3. Build and smoke test: `npm run verify && npm run build`
-4. Tag and push: `git push --follow-tags`
-5. Create GitHub release
-6. Submit to Chrome Web Store / Edge Add‑ons
+3. Smoke test: `npm run verify && npm run test:e2e`
+4. Load the repository root unpacked in Chrome and summarize a real page —
+   `activeTab` is granted only on a real toolbar click, which the E2E suite
+   cannot perform
+5. Tag and push: `git push --follow-tags`
+6. Create a GitHub release; the CI `package` job attaches the zip
 
 ## Issue Triage
 

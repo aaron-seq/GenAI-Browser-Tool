@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GenAI Browser Tool",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "description": "Summarize, question, translate, and analyse the page you are on, using the AI provider and API key you choose.",
   "author": "Aaron Sequeira <aaronsequeira12@gmail.com>",
   "permissions": [

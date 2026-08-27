@@ -1,7 +1,6 @@
 /**
  * @file background.js
  * @description Service worker: routes UI requests to the configured AI provider.
- * @version 5.0.0
  */
 
 import { ConfigurationManager } from './core/configuration-manager.js';

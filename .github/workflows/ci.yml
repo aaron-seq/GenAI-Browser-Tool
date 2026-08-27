@@ -100,7 +100,8 @@ jobs:
         run: |
           zip -r genai-browser-tool.zip . \
             -x 'node_modules/*' 'tests/*' 'docs/*' '.git/*' '.github/*' \
-               'dist/*' 'coverage/*' 'playwright-report/*' '*.config.js'
+               '.husky/*' 'coverage/*' 'playwright-report/*' '*.config.js' \
+               'package*.json'
 
       - name: Upload extension artifact
         uses: actions/upload-artifact@v4

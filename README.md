@@ -91,15 +91,18 @@ Load it in Chrome:
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
-3. Click **Load unpacked** and select the **repository root** (not `dist/`)
+3. Click **Load unpacked** and select the **repository root**
 4. The options page opens on first install — pick a provider and paste an API key
 
 The repository root is the loadable extension: `manifest.json` references the
 source files directly, and Chrome loads ES modules natively in MV3 service
-workers, so **no build step is required for development**.
+workers, so **there is no build step at all** — not for development and not for
+packaging. Packaging is a zip of the root with `node_modules/`, `tests/`, and
+`docs/` excluded, which is what the CI `package` job produces.
 
-`npm run build` writes bundled, minified copies to `dist/` for packaging. There is
-no `dist/manifest.json`, so `dist/` is not loadable on its own.
+Development requires Node 20.19 or newer (the floor set by ESLint 10, Vitest 4,
+and jsdom 29). Node is only ever used for the toolchain; the extension itself
+ships zero runtime dependencies.
 
 ### Configuration
 
@@ -124,8 +127,7 @@ provider ships a newer model than the default here.
 | `npm run test:coverage` | Coverage report |
 | `npm run typecheck` | `tsc --noEmit` over the shipped source |
 | `npm run lint` | ESLint |
-| `npm run verify` | lint + typecheck + test |
-| `npm run build` | Bundle to `dist/` |
+| `npm run verify` | lint + typecheck + test — run this before a PR |
 | `npm run test:e2e` | Loads the extension into real Chrome and drives it (see below) |
 
 ### End-to-end tests
@@ -172,8 +174,8 @@ content.js ─┘◄──── chrome.tabs.sendMessage ───────�
 | `content.js` | Read-only DOM extraction. |
 | `scripts/popup-main.js` | Popup UI. |
 | `options.js` | Settings UI. |
-| `services/storage-service.js` | Local history, bookmarks, export/import. |
-| `src/utils/validation-service.js` | Message and input validation. |
+| `services/storage-service.js` | Local history: saved summaries and answered questions. |
+| `utils/validation-service.js` | Message and question validation. |
 
 ### Design decisions
 

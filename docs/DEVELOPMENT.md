@@ -4,27 +4,76 @@ This guide provides detailed information for developers working on the GenAI Bro
 
 ## Architecture Overview
 
-The extension follows a modular architecture with clear separation of concerns:
+Every AI call originates in the service worker. The popup and the options page
+never talk to a provider, and the content script has no network access at all —
+so there is exactly one place where a request can be shaped, retried, or leak a
+key.
 
+```mermaid
+flowchart TD
+    popup["popup.html<br/>scripts/popup-main.js"]
+    options["options.html<br/>options.js"]
+    menus["Context menus<br/>Ctrl+Shift+S"]
+    bg["background.js<br/>service worker — message router"]
+    content["content.js<br/>read-only DOM extraction"]
+    config["core/configuration-manager.js<br/>chrome.storage.sync"]
+    tasks["core/tasks.js<br/>prompt construction"]
+    client["providers/ai-client.js<br/>one fetch client, shaped per provider"]
+    store["services/storage-service.js<br/>chrome.storage.local history"]
+    api["Provider HTTPS API"]
+
+    popup -->|chrome.runtime.sendMessage| bg
+    options -->|writes settings| config
+    menus --> bg
+    bg -->|chrome.tabs.sendMessage| content
+    content -->|page text| bg
+    bg --> config
+    bg --> tasks
+    config -->|builds a client for<br/>the selected provider| client
+    tasks -->|system + user prompt| client
+    client -->|fetch, with retry| api
+    bg --> store
 ```
-┌────────────────────┐
-│   Browser Extension    │
-├────────────────────┤
-│ Background Service     │
-│ - AI Orchestration     │
-│ - Context Menus        │
-│ - Message Handling     │
-├────────────────────┤
-│ Content Scripts        │
-│ - DOM Interaction      │
-│ - Content Extraction   │
-├────────────────────┤
-│ User Interface         │
-│ - Popup               │
-│ - Options Page        │
-│ - Notifications       │
-└────────────────────┘
+
+### Request lifecycle: one summary
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant P as Popup
+    participant B as background.js
+    participant C as content.js
+    participant A as Provider API
+
+    U->>P: Click "Generate Summary"
+    P->>B: EXTRACT_PAGE_CONTENT { tabId }
+    B->>C: chrome.tabs.sendMessage
+    C-->>B: title, mainText, headings
+    B-->>P: page content
+    P->>B: GENERATE_CONTENT_SUMMARY { content, style, length }
+    B->>B: chunkContent() — split if over 24,000 chars
+
+    alt page fits one request
+        B->>A: one completion
+        A-->>B: summary
+    else long page (map-reduce, 3 sections in flight)
+        loop each section, capped at 8
+            B->>A: summarize section
+            A-->>B: section notes
+        end
+        B->>A: merge the notes
+        A-->>B: whole-page summary
+    end
+
+    B->>B: save to local history
+    B-->>P: text, provider, model, sections, droppedChars
+    P->>U: rendered summary + coverage statement
 ```
+
+A failure at any provider step is returned with its own message and an error
+code (`MISSING_API_KEY`, `AUTH_ERROR`, `TIMEOUT`, …). Nothing degrades into a
+plausible-looking fake result, and a section that fails after retries fails the
+whole summary rather than producing a partial one presented as complete.
 
 ## Core Components
 
@@ -55,13 +104,15 @@ The extension follows a modular architecture with clear separation of concerns:
 
 **Key Responsibilities**:
 - Extract page content (text, metadata, structure)
-- Handle text selection and context menu triggers
-- Inject UI elements when needed
-- Communicate with background service
+- Read the current selection, links, and images on request
+
+It is read-only by design: it never modifies the page, injects no UI, and has no
+network access of its own. Stripping of navigation and ads happens on a clone, so
+the page the user is looking at is untouched.
 
 ### Popup Interface
 
-**Files**: `popup.html`, `popup.js`, `popup.css`  
+**Files**: `popup.html`, `scripts/popup-main.js`, `styles/popup.css`  
 **Purpose**: Main user interface for extension
 
 **Key Features**:
@@ -206,20 +257,14 @@ const storageSchema = {
       context: 'Page context',
       timestamp: 1699123456789
     }
-  ],
-  
-  // Smart bookmarks
-  smartBookmarks: [
-    {
-      url: 'https://example.com',
-      title: 'Page title',
-      summary: 'AI-generated summary',
-      tags: ['tag1', 'tag2'],
-      timestamp: 1699123456789
-    }
   ]
 };
 ```
+
+Settings are **not** here. They live in `chrome.storage.sync` under a single
+`user_preferences` key, behind `core/configuration-manager.js`, which is their
+only reader and writer. A `smartBookmarks` list was documented here until 5.2.0
+and never existed in any reachable form.
 
 ### Storage Management
 
@@ -299,12 +344,15 @@ class PerformanceTracker {
 }
 ```
 
-### Caching Strategy
+### Caching
 
-- **Content Caching**: Cache processed content
-- **API Response Caching**: Reduce duplicate requests
-- **Configuration Caching**: Optimize settings access
-- **TTL Management**: Automatic cache expiration
+There is none. No response cache, no content cache, no TTL layer. Every AI action
+issues a fresh request.
+
+This is a deliberate gap rather than an oversight: summaries are cheap to re-run,
+pages change under the same URL, and a stale summary presented as current is a
+worse failure than paying for a second request. Adding one would mean deciding
+what invalidates an entry, which is tracked as future work rather than assumed.
 
 ## Testing Strategy
 
@@ -345,46 +393,38 @@ test('should load extension', async ({ page, context }) => {
 
 ## Build System
 
-**No build step is required for development.** Load the repository root as an
-unpacked extension; `manifest.json` points at the source files and Chrome loads
-ES modules natively in MV3 service workers. After editing, hit **Reload** on
-`chrome://extensions`.
+**There is no build step**, for development or for packaging. Load the
+repository root as an unpacked extension; `manifest.json` points at the source
+files and Chrome loads ES modules natively in MV3 service workers. After editing,
+hit **Reload** on `chrome://extensions`.
 
 ```bash
-npm run dev      # Rollup in watch mode (only needed to test the bundled output)
-npm run build    # Bundle + minify to dist/ for packaging
 npm run verify   # lint + typecheck + test — run this before a PR
 ```
 
-### Build Configuration
+A Rollup config existed until 5.2.0 and was removed: CI built `dist/` and then
+excluded it from the packaged zip, so nothing ever consumed the output.
 
-- **Rollup** (`rollup.extension.config.js`): bundles the four entry points
-  (`background.js`, `content.js`, `scripts/popup-main.js`, `options.js`) to
-  `dist/`. Minifies only when `NODE_ENV=production`.
+- **Packaging**: zip the repository root with `node_modules/`, `tests/`, `docs/`,
+  and the config files excluded. The CI `package` job does exactly this and
+  uploads the result as an artifact.
 - **TypeScript**: type checking of JavaScript via JSDoc (`checkJs: true`). No
   `.ts` source files. `npm run typecheck` must report zero errors.
-
-`dist/` contains no `manifest.json` or HTML, so it is not loadable on its own —
-packaging for the Web Store means zipping the root with `node_modules`, `tests`,
-and `docs` excluded.
 
 ## Deployment
 
 ### Chrome Web Store
 
-1. Build production version
-2. Test in multiple environments
-3. Create store listing assets
-4. Submit for review
-5. Monitor user feedback
+The extension is **not published**. It is installed unpacked. If that changes,
+the store listing needs icons, screenshots, and a privacy justification for the
+`host_permissions` entries; the packaged zip is already produced by CI.
 
-### Development Installation
+### Development installation
 
-1. Clone repository
-2. Install dependencies
-3. Build extension
-4. Load unpacked in Chrome
-5. Test functionality
+1. Clone the repository
+2. `npm ci` (Node 20.19 or newer)
+3. `chrome://extensions` → Developer mode → **Load unpacked** → repository root
+4. Add a provider API key on the options page, which opens on first install
 
 ## Troubleshooting
 
