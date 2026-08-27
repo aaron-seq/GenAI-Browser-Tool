@@ -317,4 +317,59 @@ describe('Extension workflow', () => {
       expect(global.fetch).not.toHaveBeenCalled();
     });
   });
+
+  describe('export', () => {
+    beforeEach(() => {
+      chrome.storage.local.get.mockImplementation(async (/** @type {string[]} */ keys) =>
+        Object.fromEntries(
+          keys
+            .filter(key => key === 'genai_summary_history')
+            .map(key => [key, [{ id: 'sum-1', summary: 'a saved summary' }]])
+        )
+      );
+    });
+
+    // Regression: the export was built from a `genai_user_preferences` key in
+    // local storage that nothing ever wrote, so it reported that key's
+    // hardcoded defaults — `aiProvider: 'chrome-ai'`, a provider removed in
+    // 5.0.0 — and never the settings the user had actually chosen.
+    it('reports the settings the user actually chose', async () => {
+      const response = await dispatch('EXPORT_USER_DATA', {});
+
+      expect(response.success).toBe(true);
+      expect(response.data.settings).toMatchObject({
+        preferredProvider: 'anthropic',
+        summaryType: 'key-points'
+      });
+      expect(response.data.settings).not.toHaveProperty('aiProvider');
+    });
+
+    it('never includes API keys', async () => {
+      const response = await dispatch('EXPORT_USER_DATA', {});
+
+      expect(response.data.settings).not.toHaveProperty('apiKeys');
+      expect(JSON.stringify(response.data)).not.toContain('sk-ant-test');
+    });
+
+    it('includes saved history', async () => {
+      const response = await dispatch('EXPORT_USER_DATA', {});
+
+      expect(response.data.summaries).toEqual([
+        expect.objectContaining({ summary: 'a saved summary' })
+      ]);
+      expect(response.data.conversations).toEqual([]);
+    });
+
+    // Regression: this returned a JSON *string*, which the popup then stringified
+    // again, so the downloaded file was a quoted string literal containing
+    // escaped JSON rather than a JSON document.
+    it('returns an object so the popup serialises it exactly once', async () => {
+      const response = await dispatch('EXPORT_USER_DATA', {});
+
+      expect(typeof response.data).toBe('object');
+      expect(JSON.parse(JSON.stringify(response.data, null, 2))).toMatchObject({
+        schemaVersion: expect.any(Number)
+      });
+    });
+  });
 });

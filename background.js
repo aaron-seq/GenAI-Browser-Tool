@@ -24,6 +24,9 @@ import { Logger } from './utils/logger.js';
  */
 const SECTION_CONCURRENCY = 3;
 
+/** Bumped when the shape of an exported file changes. */
+const EXPORT_SCHEMA_VERSION = 2;
+
 /**
  * Context menu id -> the task it runs and where its input comes from.
  * @type {Record<string, { task: string, source: 'selection' | 'page', title: string }>}
@@ -160,7 +163,7 @@ class BackgroundService {
         return this.storageService.getAnalysisHistory();
 
       case 'EXPORT_USER_DATA':
-        return this.storageService.exportUserData(payload);
+        return this.exportUserData();
 
       default:
         throw new AIError('UNSUPPORTED_ACTION', `Unsupported action type: ${actionType}`);
@@ -335,6 +338,37 @@ class BackgroundService {
     return response.data;
   }
 
+  /**
+   * Everything the extension holds about this user, as one object.
+   *
+   * Composed here because it spans both stores: settings live in
+   * `chrome.storage.sync` behind the configuration manager, history lives in
+   * `chrome.storage.local` behind the storage service. The storage service used
+   * to build this alone from a preferences key nothing wrote, so an export
+   * reported defaults instead of the user's actual configuration.
+   *
+   * API keys are removed. An export is a file the user will move around; a
+   * provider credential does not belong in it.
+   *
+   * Returns an object, not a JSON string. The popup serialises it once when it
+   * writes the file — returning a string here meant the download was a JSON
+   * string literal containing escaped JSON rather than a JSON document.
+   *
+   * @returns {Promise<any>}
+   */
+  async exportUserData() {
+    const { apiKeys: _apiKeys, ...settings } = await this.configManager.getUserPreferences();
+    const { summaries, conversations } = await this.storageService.getAnalysisHistory();
+
+    return {
+      settings,
+      summaries,
+      conversations,
+      exportedAt: new Date().toISOString(),
+      schemaVersion: EXPORT_SCHEMA_VERSION
+    };
+  }
+
   // ------------------------------------------------------------ context menus
 
   async createContextMenus() {
@@ -407,7 +441,8 @@ class BackgroundService {
   /** @param {chrome.alarms.Alarm} alarm */
   async handleAlarm(alarm) {
     if (alarm.name === 'cleanupOldData') {
-      await this.storageService.cleanupOldData();
+      const removed = await this.storageService.cleanupOldData();
+      this.logger.info('History cleanup complete', removed);
     }
   }
 }

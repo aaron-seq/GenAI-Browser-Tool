@@ -1,6 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StorageService } from '../../services/storage-service.js';
 
+/**
+ * Back `chrome.storage.local.get` with a plain object, so a test can state what
+ * is stored once instead of matching on the key it will be asked for.
+ *
+ * @param {Record<string, any>} contents
+ */
+function givenStored(contents) {
+  chrome.storage.local.get.mockImplementation(async (/** @type {string[]} */ keys) =>
+    Object.fromEntries(keys.filter(key => key in contents).map(key => [key, contents[key]]))
+  );
+}
+
 describe('StorageService', () => {
   /** @type {StorageService} */
   let storageService;
@@ -11,8 +23,8 @@ describe('StorageService', () => {
   });
 
   describe('summary history', () => {
-    it('should save summary to history', async () => {
-      const summaryData = {
+    it('saves a summary to local history under the summary key', async () => {
+      const summary = {
         originalContent: 'Test content to summarize',
         summary: 'Test summary',
         options: { type: 'key-points', length: 'medium' },
@@ -20,120 +32,148 @@ describe('StorageService', () => {
         timestamp: Date.now()
       };
 
-      await storageService.saveSummaryHistory(summaryData);
+      await storageService.saveSummaryHistory(summary);
 
       expect(chrome.storage.local.get).toHaveBeenCalledWith(['genai_summary_history']);
       expect(chrome.storage.local.set).toHaveBeenCalledWith({
-        genai_summary_history: expect.arrayContaining([
-          expect.objectContaining(summaryData)
-        ])
+        genai_summary_history: [expect.objectContaining(summary)]
       });
     });
 
-    it('should limit summary history to maximum entries', async () => {
-      const existingHistory = Array(100).fill(null).map((_, i) => ({
-        id: i,
+    it('returns the id it assigned', async () => {
+      const id = await storageService.saveSummaryHistory({ summary: 'a' });
+      expect(id).toEqual(expect.any(String));
+      expect(id.length).toBeGreaterThan(0);
+    });
+
+    it('keeps the newest entry first and drops past the cap', async () => {
+      const existing = Array.from({ length: 1000 }, (_, i) => ({
+        id: String(i),
         summary: `Summary ${i}`,
         timestamp: Date.now() - i * 1000
       }));
+      chrome.storage.local.get.mockResolvedValue({ genai_summary_history: existing });
 
-      chrome.storage.local.get.mockResolvedValue({ genai_summary_history: existingHistory });
+      const newest = { summary: 'New summary', timestamp: Date.now() };
+      await storageService.saveSummaryHistory(newest);
 
-      const newSummary = {
-        originalContent: 'New content',
-        summary: 'New summary',
-        timestamp: Date.now()
-      };
-
-      storageService.storageQuota.summaryHistory = 100;
-      await storageService.saveSummaryHistory(newSummary);
-
-      const setCall = chrome.storage.local.set.mock.calls[0][0];
-      expect(setCall.genai_summary_history).toHaveLength(100); // Should not exceed limit
-      expect(setCall.genai_summary_history[0]).toEqual(expect.objectContaining({
-        ...newSummary,
-        id: expect.any(String),
-        schemaVersion: expect.any(String)
-      })); // New entry should be first
+      const written = chrome.storage.local.set.mock.calls[0][0].genai_summary_history;
+      expect(written).toHaveLength(1000);
+      expect(written[0]).toEqual(expect.objectContaining(newest));
     });
   });
 
   describe('conversation history', () => {
-    it('should update conversation history', async () => {
-      const conversationData = {
+    it('saves an exchange under the conversation key', async () => {
+      const exchange = {
         question: 'What is this about?',
         answer: 'This is about testing',
         context: 'Test context',
         timestamp: Date.now()
       };
 
-      await storageService.updateConversationHistory(conversationData);
+      await storageService.updateConversationHistory(exchange);
 
       expect(chrome.storage.local.get).toHaveBeenCalledWith(['genai_conversation_history']);
       expect(chrome.storage.local.set).toHaveBeenCalledWith({
-        genai_conversation_history: expect.arrayContaining([
-          expect.objectContaining(conversationData)
-        ])
+        genai_conversation_history: [expect.objectContaining(exchange)]
       });
     });
   });
 
-  describe('data cleanup', () => {
-    it('should clean up old data beyond retention period', async () => {
+  describe('getAnalysisHistory', () => {
+    it('returns both lists and a total', async () => {
+      givenStored({
+        genai_summary_history: [{ id: 'a' }, { id: 'b' }],
+        genai_conversation_history: [{ id: 'c' }]
+      });
+
+      const history = await storageService.getAnalysisHistory();
+
+      expect(history.summaries).toHaveLength(2);
+      expect(history.conversations).toHaveLength(1);
+      expect(history.totalItems).toBe(3);
+    });
+
+    it('reports empty lists when nothing is stored', async () => {
+      chrome.storage.local.get.mockResolvedValue({});
+
+      expect(await storageService.getAnalysisHistory()).toEqual({
+        summaries: [],
+        conversations: [],
+        totalItems: 0
+      });
+    });
+  });
+
+  describe('cleanupOldData', () => {
+    it('removes entries past the retention window and reports the counts', async () => {
       const now = Date.now();
-      const oldData = {
-        timestamp: now - (91 * 24 * 60 * 60 * 1000), // 91 days old (beyond 90 limit)
-        summary: 'Old summary'
-      };
-      const recentData = {
-        timestamp: now - (10 * 24 * 60 * 60 * 1000), // 10 days old
-        summary: 'Recent summary'
-      };
+      const old = { timestamp: now - 91 * 24 * 60 * 60 * 1000, summary: 'Old' };
+      const recent = { timestamp: now - 10 * 24 * 60 * 60 * 1000, summary: 'Recent' };
 
       chrome.storage.local.get.mockResolvedValue({
-        genai_summary_history: [oldData, recentData],
-        genai_conversation_history: [oldData, recentData]
+        genai_summary_history: [old, recent],
+        genai_conversation_history: [old, recent]
+      });
+
+      const removed = await storageService.cleanupOldData();
+
+      expect(removed).toEqual({ summariesRemoved: 1, conversationsRemoved: 1 });
+      for (const call of chrome.storage.local.set.mock.calls) {
+        expect(Object.values(call[0])[0]).toEqual([recent]);
+      }
+    });
+
+    // An unreadable age is not evidence of being old. Deleting a user's data on
+    // that guess is worse than keeping a few stale rows.
+    it('keeps entries that carry no timestamp', async () => {
+      chrome.storage.local.get.mockResolvedValue({
+        genai_summary_history: [{ summary: 'undated' }],
+        genai_conversation_history: []
+      });
+
+      const removed = await storageService.cleanupOldData();
+
+      expect(removed.summariesRemoved).toBe(0);
+    });
+
+    it('does not write when nothing needs removing', async () => {
+      chrome.storage.local.get.mockResolvedValue({
+        genai_summary_history: [{ timestamp: Date.now() }],
+        genai_conversation_history: []
       });
 
       await storageService.cleanupOldData();
 
-      const setCalls = chrome.storage.local.set.mock.calls;
-      const summaryUpdate = setCalls.find(call => call[0].genai_summary_history);
-      const conversationUpdate = setCalls.find(call => call[0].genai_conversation_history);
-
-      expect(summaryUpdate[0].genai_summary_history).toHaveLength(1);
-      expect(summaryUpdate[0].genai_summary_history[0]).toEqual(recentData);
-      
-      expect(conversationUpdate[0].genai_conversation_history).toHaveLength(1);
-      expect(conversationUpdate[0].genai_conversation_history[0]).toEqual(recentData);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
     });
   });
 
   describe('error handling', () => {
-    it('should handle storage errors gracefully', async () => {
+    it('falls back to the default when a read fails', async () => {
       chrome.storage.local.get.mockRejectedValue(new Error('Storage error'));
 
-      // Service swallows error and logs it, checks if it doesn't throw
-      await expect(storageService.saveSummaryHistory({})).resolves.not.toThrow();
+      await expect(storageService.saveSummaryHistory({})).resolves.toEqual(expect.any(String));
     });
 
-    it('should handle corrupted data gracefully', async () => {
+    it('starts a fresh list when the stored value is not an array', async () => {
       chrome.storage.local.get.mockResolvedValue({ genai_summary_history: 'invalid-data' });
 
-      const summaryData = {
-        originalContent: 'Test',
-        summary: 'Test summary',
-        timestamp: Date.now()
-      };
+      const summary = { summary: 'Test summary', timestamp: Date.now() };
+      await storageService.saveSummaryHistory(summary);
 
-      await storageService.saveSummaryHistory(summaryData);
-
-      // Should create new array when existing data is corrupted
       expect(chrome.storage.local.set).toHaveBeenCalledWith({
-        genai_summary_history: [
-          expect.objectContaining(summaryData)
-        ]
+        genai_summary_history: [expect.objectContaining(summary)]
       });
+    });
+
+    it('propagates a write failure rather than reporting success', async () => {
+      chrome.storage.local.get.mockResolvedValue({});
+      chrome.storage.local.set.mockRejectedValue(new Error('Quota exceeded'));
+
+      await expect(storageService.saveSummaryHistory({ summary: 'a' }))
+        .rejects.toThrow(/Quota exceeded/);
     });
   });
 });
