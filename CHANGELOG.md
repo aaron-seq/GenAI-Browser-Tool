@@ -5,6 +5,27 @@ All notable changes to the GenAI Browser Tool project will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Legacy `dist/` and `build/` output no longer breaks linting or enters the CI
+  extension ZIP; packaging now lists runtime inputs explicitly.
+- Updated development dependency resolutions for `brace-expansion`,
+  `source-map-js`, and `undici` to address current security advisories. Corrected
+  the lockfile's root version to match the existing 5.2.0 package and manifest.
+- Corrected stale developer documentation describing removed providers, message
+  actions, and encrypted API-key storage.
+
+### Added
+
+- A read-only CI guard rejects a stacked PR whose base is already contained in
+  the default branch, with Git-history regression tests (issue #22).
+- Service-worker regression tests for startup failure, page context menus,
+  keyboard commands, lifecycle events, alarms, and extraction failures (issue #23).
+- A high-severity dependency audit in CI, a 78% global branch-coverage floor,
+  and a separate 75% floor for `background.js`.
+
 ## [5.2.0]
 
 Correctness and toolchain work. No change to what the extension does; several
@@ -12,6 +33,7 @@ changes to whether it does it reliably, and a large reduction in code that was
 never reached.
 
 ### Fixed
+
 - **Question validation returned a different answer each time it was called.**
   `isValidQuestion` was guarded by a filter holding `/gi` regexes as instance
   fields and testing them with `RegExp.prototype.test`, which advances
@@ -26,7 +48,7 @@ never reached.
   wrote, so it always returned its own defaults — including
   `aiProvider: "chrome-ai"`, a provider removed in 5.0.0. The user's real
   configuration appeared nowhere in the exported file.
-- **The exported file was double-encoded.** Export returned a JSON *string*
+- **The exported file was double-encoded.** Export returned a JSON _string_
   which the popup then stringified again, so the download was a quoted string
   literal containing escaped JSON rather than a JSON document.
 - **The coverage gate enforced nothing.** Thresholds were declared under a
@@ -46,6 +68,7 @@ never reached.
   is nothing to remove.
 
 ### Removed
+
 - The Rollup build. CI built `dist/` and then excluded it from the packaged zip,
   so nothing consumed the output; the manifest points at source files and Chrome
   loads ES modules natively in MV3. Removes seven devDependencies.
@@ -62,6 +85,7 @@ never reached.
 - The `src/` tree, which held one file while a sibling `utils/` already existed.
 
 ### Changed
+
 - Toolchain: ESLint 8 → 10 (flat config), Vitest 1 → 4, jsdom 23 → 29, husky
   8 → 9, lint-staged 15 → 16, Playwright 1.57 → 1.62, and the `@types` packages.
   `npm audit` goes from 24 vulnerabilities (2 critical, 17 high) to 0. All
@@ -72,6 +96,7 @@ never reached.
   id generator.
 
 ### Added
+
 - Unit tests for the three DOM controllers that had none: `content.js` (0% →
   97.9%), `options.js` (0% → 96%), and the popup controller (6.6% → 88.1%). The
   popup tests drive the shipped `popup.html` rather than a fixture, so a renamed
@@ -81,6 +106,7 @@ never reached.
 ## [5.1.0]
 
 ### Added
+
 - **Automatic retry on transient provider failures.** `429`, `5xx`, and network
   blips are retried twice with exponential backoff and jitter, honouring
   `Retry-After`. Errors meaning the request itself is wrong (`400`, `401`,
@@ -91,6 +117,7 @@ never reached.
   This became necessary because of chunking below: turning one request into up
   to nine meant a single transient failure discarded every section that had
   already succeeded.
+
 - **Bounded section concurrency.** Sections are summarized three at a time
   rather than all at once. Firing eight simultaneous requests is a reliable way
   to trip the per-minute rate limit and fail exactly the long pages the feature
@@ -108,12 +135,14 @@ never reached.
   used by the swap button and never sent to the provider.
 
 ### Fixed
+
 - The popup ignored saved preferences. Summary style, summary length, target
   language, and theme were stored by the options page but never applied, so
   changing them appeared to do nothing.
 - Theme choice is now persisted rather than reset on every popup open.
 
 ### Removed
+
 - Four controls with no handler behind them: "Save Summary", "Speak", "Create
   Bookmark", and the "Preserve formatting" checkbox. Summaries are already saved
   to history automatically when generated.
@@ -124,6 +153,7 @@ Makes the extension actually perform AI work. Prior versions shipped stub
 providers that returned hardcoded strings.
 
 ### Fixed
+
 - **AI calls returned hardcoded stubs.** Four of five providers
   (`anthropic`, `gemini`, `cohere`, `chrome-ai`) returned literal strings such as
   `"Anthropic Summary Stub"`. Because they all reported `isAvailable() === true`,
@@ -149,6 +179,7 @@ providers that returned hardcoded strings.
   was never called. The offscreen document was dead code.
 
 ### Changed
+
 - Replaced five provider classes, the scoring orchestrator, and the load balancer
   (~350 lines) with one 190-line `providers/ai-client.js`. Provider choice is now
   the user's explicit setting; an unconfigured provider is a `MISSING_API_KEY`
@@ -162,6 +193,7 @@ providers that returned hardcoded strings.
 - Typecheck now covers the shipped source and reports zero errors (was 285).
 
 ### Added
+
 - Real implementations for translation, sentiment, key insights, smart tags, and
   entity extraction — previously stubs returning `{}` or a success toast.
 - Locally computed readability (Flesch) and page statistics — no API call.
@@ -171,6 +203,7 @@ providers that returned hardcoded strings.
 - `npm run verify` (lint + typecheck + test).
 
 ### Removed
+
 - Zero runtime dependencies: all ten were unused
   (`dompurify`, `zod`, `marked`, `idb`, `validator`, `ai`, `@ai-sdk/*`,
   `@google-ai/generativelanguage`). Vulnerabilities dropped from 49 to 23, all
@@ -186,6 +219,7 @@ providers that returned hardcoded strings.
 ## [Unreleased]
 
 ### Added
+
 - Comprehensive build system with rollup extension configuration
 - MIT LICENSE file for legal compliance
 - Comprehensive CONTRIBUTING.md with development guidelines
@@ -196,6 +230,7 @@ providers that returned hardcoded strings.
 - Comprehensive test coverage for core functionality
 
 ### Fixed
+
 - Manifest file paths corrected to match actual file structure
 - Background service worker path updated for proper loading
 - Content script paths aligned with project structure
@@ -203,11 +238,13 @@ providers that returned hardcoded strings.
 - Content Security Policy strengthened for better security
 
 ### Changed
+
 - Improved development workflow with proper build configuration
 - Enhanced security validation and input sanitization
 - Updated project structure for better maintainability
 
 ### Security
+
 - Strengthened Content Security Policy
 - Added comprehensive input validation and sanitization
 - Improved API key handling and storage security
@@ -215,6 +252,7 @@ providers that returned hardcoded strings.
 ## [4.1.0] - 2024-11-03
 
 ### Added
+
 - Multi-provider AI support (OpenAI, Anthropic, Google Gemini)
 - Advanced content summarization with customizable options
 - Contextual Q&A functionality
@@ -227,6 +265,7 @@ providers that returned hardcoded strings.
 - Analytics tracking for performance monitoring
 
 ### Security
+
 - Content Security Policy implementation
 - Input validation and sanitization
 - Secure API key storage
@@ -234,6 +273,7 @@ providers that returned hardcoded strings.
 ## [4.0.0] - Previous Release
 
 ### Added
+
 - Initial extension architecture
 - Basic AI provider integration
 - Popup interface
@@ -246,11 +286,13 @@ providers that returned hardcoded strings.
 ## Release Guidelines
 
 ### Version Numbering
+
 - **MAJOR**: Breaking changes that require user action
 - **MINOR**: New features that are backward compatible
 - **PATCH**: Bug fixes that are backward compatible
 
 ### Change Categories
+
 - **Added**: New features
 - **Changed**: Changes in existing functionality
 - **Deprecated**: Soon-to-be removed features
@@ -259,6 +301,7 @@ providers that returned hardcoded strings.
 - **Security**: Security improvements
 
 ### Release Process
+
 1. Update version in package.json and manifest.json
 2. Update CHANGELOG.md with release notes
 3. Create release branch
