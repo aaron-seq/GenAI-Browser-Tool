@@ -27,7 +27,7 @@ export default defineConfig({
         'providers/**/*.js',
         'scripts/**/*.js',
         'services/**/*.js',
-        'utils/**/*.js'
+        'utils/**/*.js',
       ],
 
       // Flat keys. These lived under a `thresholds.global` object, which is the
@@ -37,14 +37,15 @@ export default defineConfig({
       // Set a few points under what the suite actually achieves, so an ordinary
       // refactor does not fail CI but a real regression does.
       thresholds: {
-        branches: 72,
+        branches: 78,
         functions: 85,
         lines: 88,
-        statements: 85
-      }
+        statements: 85,
+        'background.js': { branches: 75 },
+      },
     },
 
     testTimeout: 10000,
-    hookTimeout: 10000
-  }
+    hookTimeout: 10000,
+  },
 });
