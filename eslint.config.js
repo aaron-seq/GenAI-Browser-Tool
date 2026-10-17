@@ -14,7 +14,14 @@ import globals from 'globals';
  */
 export default [
   {
-    ignores: ['coverage/**', 'playwright-report/**', 'test-results/**', 'node_modules/**']
+    ignores: [
+      'coverage/**',
+      'playwright-report/**',
+      'test-results/**',
+      'node_modules/**',
+      'dist/**',
+      'build/**',
+    ],
   },
 
   js.configs.recommended,
@@ -28,8 +35,8 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.serviceworker,
-        ...globals.webextensions
-      }
+        ...globals.webextensions,
+      },
     },
     rules: {
       // console.log is debug output that should not survive review; warn and
@@ -45,13 +52,16 @@ export default [
 
       'prefer-const': 'error',
       'no-var': 'error',
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
 
       // A promise rejection that nobody awaits disappears silently in a service
       // worker; every AI call in this codebase is async.
       'no-async-promise-executor': 'error',
-      'require-atomic-updates': 'error'
-    }
+      'require-atomic-updates': 'error',
+    },
   },
 
   {
@@ -59,11 +69,11 @@ export default [
     // and `global.chrome` from the Node side of the jsdom environment.
     files: ['tests/**/*.js'],
     languageOptions: {
-      globals: { ...globals.node, ...globals.vitest }
+      globals: { ...globals.node, ...globals.vitest },
     },
     rules: {
-      'no-console': 'off'
-    }
+      'no-console': 'off',
+    },
   },
 
   {
@@ -71,15 +81,15 @@ export default [
     // else routes through this module precisely so the calls are in one file.
     files: ['utils/logger.js'],
     rules: {
-      'no-console': 'off'
-    }
+      'no-console': 'off',
+    },
   },
 
   {
     // Config files are Node modules, not extension code.
-    files: ['*.config.js'],
+    files: ['*.config.js', '.github/scripts/*.mjs'],
     languageOptions: {
-      globals: globals.node
-    }
-  }
+      globals: globals.node,
+    },
+  },
 ];
