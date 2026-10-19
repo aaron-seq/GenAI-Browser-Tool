@@ -4,7 +4,7 @@ import {
   AIError,
   PROVIDERS,
   backoffDelay,
-  parseRetryAfter
+  parseRetryAfter,
 } from '../../providers/ai-client.js';
 
 /**
@@ -17,7 +17,7 @@ function mockResponse(body, init = {}) {
     status: init.status ?? 200,
     statusText: init.statusText ?? 'OK',
     headers: { get: () => init.retryAfter ?? null },
-    json: vi.fn().mockResolvedValue(body)
+    json: vi.fn().mockResolvedValue(body),
   };
 }
 
@@ -28,7 +28,9 @@ function fastClient(overrides = {}) {
 
 const ANTHROPIC_OK = { content: [{ type: 'text', text: '  a summary  ' }] };
 const OPENAI_OK = { choices: [{ message: { content: 'a summary' } }] };
-const GEMINI_OK = { candidates: [{ content: { parts: [{ text: 'a summary' }] } }] };
+const GEMINI_OK = {
+  candidates: [{ content: { parts: [{ text: 'a summary' }] } }],
+};
 
 describe('AIClient', () => {
   beforeEach(() => {
@@ -37,8 +39,15 @@ describe('AIClient', () => {
 
   describe('construction', () => {
     it('rejects an unknown provider', () => {
-      expect(() => new AIClient({ provider: 'nope', apiKey: 'k' }))
-        .toThrow(/Unknown AI provider/);
+      expect(() => new AIClient({ provider: 'nope', apiKey: 'k' })).toThrow(
+        /Unknown AI provider/
+      );
+    });
+
+    it('does not accept inherited object properties as provider IDs', () => {
+      expect(
+        () => new AIClient({ provider: 'constructor', apiKey: 'k' })
+      ).toThrow(/Unknown AI provider/);
     });
 
     it('reports a missing API key with a code the UI can branch on', () => {
@@ -58,15 +67,30 @@ describe('AIClient', () => {
     });
 
     it('honours an explicit model override', () => {
-      const client = new AIClient({ provider: 'openai', apiKey: 'k', model: 'gpt-5' });
+      const client = new AIClient({
+        provider: 'openai',
+        apiKey: 'k',
+        model: 'gpt-5',
+      });
       expect(client.model).toBe('gpt-5');
     });
   });
 
   describe('request shaping', () => {
+    it('uses no reasoning budget for the interactive Luna default', () => {
+      expect(
+        PROVIDERS.openai.body('system', 'question', 'gpt-6-luna', 500)
+      ).toMatchObject({ reasoning_effort: 'none', max_completion_tokens: 500 });
+      expect(
+        PROVIDERS.openai.body('system', 'question', 'custom-model', 500)
+      ).not.toHaveProperty('reasoning_effort');
+    });
     it('sends Anthropic the messages API shape with auth headers', async () => {
       global.fetch.mockResolvedValue(mockResponse(ANTHROPIC_OK));
-      const client = new AIClient({ provider: 'anthropic', apiKey: 'sk-ant-test' });
+      const client = new AIClient({
+        provider: 'anthropic',
+        apiKey: 'sk-ant-test',
+      });
 
       const text = await client.complete('system prompt', 'user prompt', 500);
 
@@ -95,13 +119,17 @@ describe('AIClient', () => {
       expect(init.headers.Authorization).toBe('Bearer sk-test');
       expect(JSON.parse(init.body).messages).toEqual([
         { role: 'system', content: 'system prompt' },
-        { role: 'user', content: 'user prompt' }
+        { role: 'user', content: 'user prompt' },
       ]);
     });
 
     it('puts the Gemini model in the path and the key in a header, not the query', async () => {
       global.fetch.mockResolvedValue(mockResponse(GEMINI_OK));
-      const client = new AIClient({ provider: 'gemini', apiKey: 'AIza-test', model: 'gemini-x' });
+      const client = new AIClient({
+        provider: 'gemini',
+        apiKey: 'AIza-test',
+        model: 'gemini-x',
+      });
 
       await client.complete('system prompt', 'user prompt');
 
@@ -110,7 +138,9 @@ describe('AIClient', () => {
       // A key in the URL leaks into logs and history; it belongs in a header.
       expect(url).not.toContain('AIza-test');
       expect(init.headers['x-goog-api-key']).toBe('AIza-test');
-      expect(JSON.parse(init.body).system_instruction.parts[0].text).toBe('system prompt');
+      expect(JSON.parse(init.body).system_instruction.parts[0].text).toBe(
+        'system prompt'
+      );
     });
   });
 
@@ -119,7 +149,12 @@ describe('AIClient', () => {
     // single transient 429 discards every section that already succeeded.
     it('retries a 429 and returns the eventual success', async () => {
       global.fetch
-        .mockResolvedValueOnce(mockResponse({ error: { message: 'slow down' } }, { ok: false, status: 429 }))
+        .mockResolvedValueOnce(
+          mockResponse(
+            { error: { message: 'slow down' } },
+            { ok: false, status: 429 }
+          )
+        )
         .mockResolvedValueOnce(mockResponse(ANTHROPIC_OK));
 
       const text = await fastClient().complete('s', 'u');
@@ -146,34 +181,50 @@ describe('AIClient', () => {
 
     it('gives up after maxRetries and reports the last error', async () => {
       global.fetch.mockResolvedValue(
-        mockResponse({ error: { message: 'slow down' } }, { ok: false, status: 429 })
+        mockResponse(
+          { error: { message: 'slow down' } },
+          { ok: false, status: 429 }
+        )
       );
 
-      await expect(fastClient({ maxRetries: 2 }).complete('s', 'u')).rejects.toMatchObject({
-        code: 'PROVIDER_ERROR'
+      await expect(
+        fastClient({ maxRetries: 2 }).complete('s', 'u')
+      ).rejects.toMatchObject({
+        code: 'PROVIDER_ERROR',
       });
       // The initial attempt plus two retries.
       expect(global.fetch).toHaveBeenCalledTimes(3);
     });
 
     it('can be configured to not retry at all', async () => {
-      global.fetch.mockResolvedValue(mockResponse({}, { ok: false, status: 503 }));
+      global.fetch.mockResolvedValue(
+        mockResponse({}, { ok: false, status: 503 })
+      );
 
-      await expect(fastClient({ maxRetries: 0 }).complete('s', 'u')).rejects.toThrow();
+      await expect(
+        fastClient({ maxRetries: 0 }).complete('s', 'u')
+      ).rejects.toThrow();
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
     it('does not retry a bad API key — that wastes quota and hides the real error', async () => {
       global.fetch.mockResolvedValue(
-        mockResponse({ error: { message: 'invalid x-api-key' } }, { ok: false, status: 401 })
+        mockResponse(
+          { error: { message: 'invalid x-api-key' } },
+          { ok: false, status: 401 }
+        )
       );
 
-      await expect(fastClient().complete('s', 'u')).rejects.toMatchObject({ code: 'AUTH_ERROR' });
+      await expect(fastClient().complete('s', 'u')).rejects.toMatchObject({
+        code: 'AUTH_ERROR',
+      });
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
     it('does not retry a malformed request', async () => {
-      global.fetch.mockResolvedValue(mockResponse({}, { ok: false, status: 400 }));
+      global.fetch.mockResolvedValue(
+        mockResponse({}, { ok: false, status: 400 })
+      );
 
       await expect(fastClient().complete('s', 'u')).rejects.toThrow();
       expect(global.fetch).toHaveBeenCalledTimes(1);
@@ -184,8 +235,10 @@ describe('AIClient', () => {
       abort.name = 'AbortError';
       global.fetch.mockRejectedValue(abort);
 
-      await expect(fastClient({ timeoutMs: 10 }).complete('s', 'u')).rejects.toMatchObject({
-        code: 'TIMEOUT'
+      await expect(
+        fastClient({ timeoutMs: 10 }).complete('s', 'u')
+      ).rejects.toMatchObject({
+        code: 'TIMEOUT',
       });
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
@@ -212,7 +265,9 @@ describe('AIClient', () => {
     });
 
     it('adds jitter so parallel sections do not resynchronise', () => {
-      const samples = new Set(Array.from({ length: 20 }, () => backoffDelay(1)));
+      const samples = new Set(
+        Array.from({ length: 20 }, () => backoffDelay(1))
+      );
       expect(samples.size).toBeGreaterThan(1);
     });
 
@@ -242,31 +297,45 @@ describe('AIClient', () => {
     });
 
     it('never returns a negative delay for a past date', () => {
-      expect(parseRetryAfter(new Date(Date.now() - 60000).toUTCString())).toBe(0);
+      expect(parseRetryAfter(new Date(Date.now() - 60000).toUTCString())).toBe(
+        0
+      );
     });
   });
 
   describe('failure modes', () => {
     it('classifies 401 as an auth error', async () => {
       global.fetch.mockResolvedValue(
-        mockResponse({ error: { message: 'invalid x-api-key' } }, { ok: false, status: 401 })
+        mockResponse(
+          { error: { message: 'invalid x-api-key' } },
+          { ok: false, status: 401 }
+        )
       );
       const client = new AIClient({ provider: 'anthropic', apiKey: 'bad' });
 
-      await expect(client.complete('s', 'u')).rejects.toMatchObject({ code: 'AUTH_ERROR' });
+      await expect(client.complete('s', 'u')).rejects.toMatchObject({
+        code: 'AUTH_ERROR',
+      });
     });
 
     // These assert classification, not retry policy, so retries are off to keep
     // them fast and to isolate what they cover.
     it('classifies other non-2xx responses as provider errors and keeps the message', async () => {
       global.fetch.mockResolvedValue(
-        mockResponse({ error: { message: 'rate limited' } }, { ok: false, status: 429 })
+        mockResponse(
+          { error: { message: 'rate limited' } },
+          { ok: false, status: 429 }
+        )
       );
-      const client = new AIClient({ provider: 'openai', apiKey: 'k', maxRetries: 0 });
+      const client = new AIClient({
+        provider: 'openai',
+        apiKey: 'k',
+        maxRetries: 0,
+      });
 
       await expect(client.complete('s', 'u')).rejects.toMatchObject({
         code: 'PROVIDER_ERROR',
-        message: expect.stringContaining('rate limited')
+        message: expect.stringContaining('rate limited'),
       });
     });
 
@@ -274,10 +343,14 @@ describe('AIClient', () => {
       global.fetch.mockResolvedValue(
         mockResponse({ error: { message: 'nope' } }, { ok: false, status: 403 })
       );
-      const client = new AIClient({ provider: 'openai', apiKey: 'sk-super-secret' });
+      const client = new AIClient({
+        provider: 'openai',
+        apiKey: 'sk-super-secret',
+      });
 
       await expect(client.complete('s', 'u')).rejects.toSatisfy(
-        /** @param {Error} err */ err => !err.message.includes('sk-super-secret')
+        /** @param {Error} err */ err =>
+          !err.message.includes('sk-super-secret')
       );
     });
 
@@ -287,22 +360,30 @@ describe('AIClient', () => {
         status: 500,
         statusText: 'Internal Server Error',
         headers: { get: () => null },
-        json: vi.fn().mockRejectedValue(new SyntaxError('not json'))
+        json: vi.fn().mockRejectedValue(new SyntaxError('not json')),
       });
-      const client = new AIClient({ provider: 'anthropic', apiKey: 'k', maxRetries: 0 });
+      const client = new AIClient({
+        provider: 'anthropic',
+        apiKey: 'k',
+        maxRetries: 0,
+      });
 
       await expect(client.complete('s', 'u')).rejects.toMatchObject({
-        message: expect.stringContaining('Internal Server Error')
+        message: expect.stringContaining('Internal Server Error'),
       });
     });
 
     it('reports a network failure without masking the cause', async () => {
       global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
-      const client = new AIClient({ provider: 'anthropic', apiKey: 'k', maxRetries: 0 });
+      const client = new AIClient({
+        provider: 'anthropic',
+        apiKey: 'k',
+        maxRetries: 0,
+      });
 
       await expect(client.complete('s', 'u')).rejects.toMatchObject({
         code: 'NETWORK_ERROR',
-        message: expect.stringContaining('Failed to fetch')
+        message: expect.stringContaining('Failed to fetch'),
       });
     });
 
@@ -310,9 +391,15 @@ describe('AIClient', () => {
       const abort = new Error('aborted');
       abort.name = 'AbortError';
       global.fetch.mockRejectedValue(abort);
-      const client = new AIClient({ provider: 'anthropic', apiKey: 'k', timeoutMs: 10 });
+      const client = new AIClient({
+        provider: 'anthropic',
+        apiKey: 'k',
+        timeoutMs: 10,
+      });
 
-      await expect(client.complete('s', 'u')).rejects.toMatchObject({ code: 'TIMEOUT' });
+      await expect(client.complete('s', 'u')).rejects.toMatchObject({
+        code: 'TIMEOUT',
+      });
     });
 
     it('throws rather than returning empty text when a provider returns no content', async () => {

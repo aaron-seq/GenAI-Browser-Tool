@@ -780,4 +780,202 @@ describe('Extension workflow', () => {
       });
     });
   });
+
+  describe('learning workspace and memory', () => {
+    beforeEach(() => {
+      const stored = {};
+      chrome.storage.local.get.mockImplementation(async keys =>
+        Object.fromEntries(
+          keys
+            .filter(key => key in stored)
+            .map(key => [key, structuredClone(stored[key])])
+        )
+      );
+      chrome.storage.local.set.mockImplementation(async values =>
+        Object.assign(stored, structuredClone(values))
+      );
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+    });
+
+    const page = {
+      url: 'https://example.test/book',
+      title: 'My book',
+      content: 'A short book about botany.',
+    };
+
+    it('reuses a matching summary without another provider request', async () => {
+      expect(
+        (await dispatch('GENERATE_CONTENT_SUMMARY', page)).data.cached
+      ).toBe(false);
+      const again = await dispatch('GENERATE_CONTENT_SUMMARY', page);
+      expect(again.data.cached).toBe(true);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const history = await dispatch('GET_DOCUMENT_HISTORY', page);
+      expect(history.data.summaries).toHaveLength(1);
+    });
+
+    it('invalidates saved summaries when content or style changes', async () => {
+      await dispatch('GENERATE_CONTENT_SUMMARY', page);
+      await dispatch('GENERATE_CONTENT_SUMMARY', {
+        ...page,
+        content: 'A revised edition.',
+      });
+      await dispatch('GENERATE_CONTENT_SUMMARY', {
+        ...page,
+        summaryType: 'technical',
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('retrieves late-book evidence and asks for passage citations in one call', async () => {
+      const context = `${'General background. '.repeat(4000)}The heliotrope answer is 73 amber crystals.`;
+      const response = await dispatch('ANSWER_CONTEXTUAL_QUESTION', {
+        ...page,
+        context,
+        question: 'How many amber crystals from heliotrope?',
+      });
+      expect(response.success).toBe(true);
+      expect(
+        response.data.sources.some(source =>
+          source.text.includes('73 amber crystals')
+        )
+      ).toBe(true);
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.system).toContain('Cite supporting passage labels');
+      expect(body.messages[0].content).toContain('73 amber crystals');
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('restores only the same URL and unchanged content, and clears only that chat', async () => {
+      const ask = (url, context) =>
+        dispatch('ANSWER_CONTEXTUAL_QUESTION', {
+          url,
+          context,
+          question: 'What is this about?',
+        });
+      await ask(page.url, page.content);
+      await ask('https://example.test/other', page.content);
+      expect(
+        (await dispatch('GET_DOCUMENT_HISTORY', page)).data.conversations
+      ).toHaveLength(1);
+      expect(
+        (
+          await dispatch('GET_DOCUMENT_HISTORY', {
+            ...page,
+            content: 'Changed page',
+          })
+        ).data.conversations
+      ).toEqual([]);
+      const cleared = await dispatch('CLEAR_DOCUMENT_CHAT', page);
+      expect(cleared.data.removed).toBe(1);
+      expect(
+        (await dispatch('GET_DOCUMENT_HISTORY', page)).data.conversations
+      ).toEqual([]);
+      expect(
+        (
+          await dispatch('GET_DOCUMENT_HISTORY', {
+            ...page,
+            url: 'https://example.test/other',
+          })
+        ).data.conversations
+      ).toHaveLength(1);
+    });
+
+    it('does not persist or restore when history is disabled', async () => {
+      chrome.storage.sync.get.mockResolvedValue({
+        user_preferences: {
+          ...CONFIGURED.user_preferences,
+          features: { saveHistory: false },
+        },
+      });
+      await dispatch('GENERATE_CONTENT_SUMMARY', page);
+      await dispatch('ANSWER_CONTEXTUAL_QUESTION', {
+        ...page,
+        context: page.content,
+        question: 'What is this about?',
+      });
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+      const history = await dispatch('GET_DOCUMENT_HISTORY', page);
+      expect(history.data).toMatchObject({
+        memoryEnabled: false,
+        summaries: [],
+        conversations: [],
+      });
+    });
+
+    it('does not reuse a summary from a different model', async () => {
+      await dispatch('GENERATE_CONTENT_SUMMARY', page);
+      chrome.storage.sync.get.mockResolvedValue({
+        user_preferences: {
+          ...CONFIGURED.user_preferences,
+          models: { anthropic: 'my-custom-model' },
+        },
+      });
+      const result = await dispatch('GENERATE_CONTENT_SUMMARY', page);
+      expect(result.data.cached).toBe(false);
+      expect(result.data.model).toBe('my-custom-model');
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps evidence scoped correctly when switching among several documents', async () => {
+      for (const chapter of [1, 2, 3, 4, 1]) {
+        const context = `This is chapter ${chapter}. Its special evidence is violet-${chapter}.`;
+        const result = await dispatch('ANSWER_CONTEXTUAL_QUESTION', {
+          url: `https://example.test/${chapter}`,
+          context,
+          question: 'What evidence is violet?',
+        });
+        expect(result.data.sources[0].text).toBe(context);
+      }
+    });
+  });
+
+  describe('on-demand provider checks', () => {
+    it('tests the requested provider without saving its key', async () => {
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+      const response = await dispatch('TEST_PROVIDER_CONNECTION', {
+        provider: 'anthropic',
+        apiKey: 'probe-key',
+        model: 'my-model',
+      });
+      expect(response).toMatchObject({
+        success: true,
+        data: { model: 'my-model' },
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+      expect(JSON.stringify(response)).not.toContain('probe-key');
+    });
+
+    it.each([
+      [
+        'auth',
+        () =>
+          Promise.resolve({
+            ok: false,
+            status: 401,
+            statusText: 'Unauthorized',
+            json: async () => ({ error: { message: 'invalid key' } }),
+          }),
+        '401',
+      ],
+      [
+        'network',
+        () => Promise.reject(new TypeError('Failed to fetch')),
+        'Failed to fetch',
+      ],
+    ])(
+      'reports %s failure without retries',
+      async (_label, request, expected) => {
+        global.fetch.mockImplementation(request);
+        const response = await dispatch('TEST_PROVIDER_CONNECTION', {
+          provider: 'anthropic',
+          apiKey: 'probe-key',
+        });
+        expect(response.success).toBe(false);
+        expect(response.error).toContain(expected);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+      }
+    );
+  });
 });

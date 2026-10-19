@@ -25,20 +25,20 @@
 export const PROVIDERS = {
   anthropic: {
     label: 'Anthropic Claude',
-    defaultModel: 'claude-opus-5',
+    defaultModel: 'claude-haiku-5-5',
     url: () => 'https://api.anthropic.com/v1/messages',
     headers: key => ({
       'x-api-key': key,
       'anthropic-version': '2023-06-01',
       // Required for requests originating from a browser/extension context.
-      'anthropic-dangerous-direct-browser-access': 'true'
+      'anthropic-dangerous-direct-browser-access': 'true',
     }),
     // No `temperature`: sampling parameters are rejected on current Claude models.
     body: (system, user, model, maxTokens) => ({
       model,
       max_tokens: maxTokens,
       system,
-      messages: [{ role: 'user', content: user }]
+      messages: [{ role: 'user', content: user }],
     }),
     parse: data => {
       const block = (data.content || []).find(
@@ -46,32 +46,34 @@ export const PROVIDERS = {
       );
       if (!block) throw new Error('Anthropic response contained no text block');
       return block.text;
-    }
+    },
   },
 
   openai: {
     label: 'OpenAI',
-    defaultModel: 'gpt-4o-mini',
+    defaultModel: 'gpt-6-luna',
     url: () => 'https://api.openai.com/v1/chat/completions',
     headers: key => ({ Authorization: `Bearer ${key}` }),
     body: (system, user, model, maxTokens) => ({
       model,
       max_completion_tokens: maxTokens,
+      ...(model === 'gpt-6-luna' ? { reasoning_effort: 'none' } : {}),
       messages: [
         { role: 'system', content: system },
-        { role: 'user', content: user }
-      ]
+        { role: 'user', content: user },
+      ],
     }),
     parse: data => {
       const text = data.choices?.[0]?.message?.content;
-      if (!text) throw new Error('OpenAI response contained no message content');
+      if (!text)
+        throw new Error('OpenAI response contained no message content');
       return text;
-    }
+    },
   },
 
   gemini: {
     label: 'Google Gemini',
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-3.5-flash-lite',
     url: model =>
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     headers: key => ({ 'x-goog-api-key': key }),
@@ -79,14 +81,14 @@ export const PROVIDERS = {
     body: (system, user, _model, maxTokens) => ({
       system_instruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: { maxOutputTokens: maxTokens }
+      generationConfig: { maxOutputTokens: maxTokens },
     }),
     parse: data => {
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) throw new Error('Gemini response contained no candidate text');
       return text;
-    }
-  }
+    },
+  },
 };
 
 /** Provider ids in the order they appear in the options page. */
@@ -139,9 +141,11 @@ export class AIClient {
     apiKey,
     model,
     timeoutMs = DEFAULT_TIMEOUT_MS,
-    maxRetries = DEFAULT_MAX_RETRIES
+    maxRetries = DEFAULT_MAX_RETRIES,
   }) {
-    const spec = PROVIDERS[provider];
+    const spec = Object.hasOwn(PROVIDERS, provider)
+      ? PROVIDERS[provider]
+      : null;
     if (!spec) {
       throw new AIError('UNKNOWN_PROVIDER', `Unknown AI provider: ${provider}`);
     }
@@ -200,9 +204,12 @@ export class AIClient {
     try {
       response = await fetch(spec.url(this.model), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...spec.headers(this.apiKey) },
+        headers: {
+          'Content-Type': 'application/json',
+          ...spec.headers(this.apiKey),
+        },
         body,
-        signal: controller.signal
+        signal: controller.signal,
       });
     } catch (error) {
       /** @type {any} */
@@ -213,13 +220,19 @@ export class AIClient {
         return {
           ok: false,
           retryable: false,
-          error: new AIError('TIMEOUT', `${spec.label} did not respond within ${this.timeoutMs}ms`)
+          error: new AIError(
+            'TIMEOUT',
+            `${spec.label} did not respond within ${this.timeoutMs}ms`
+          ),
         };
       }
       return {
         ok: false,
         retryable: true,
-        error: new AIError('NETWORK_ERROR', `Could not reach ${spec.label}: ${err.message}`)
+        error: new AIError(
+          'NETWORK_ERROR',
+          `Could not reach ${spec.label}: ${err.message}`
+        ),
       };
     } finally {
       clearTimeout(timer);
@@ -231,12 +244,16 @@ export class AIClient {
         ok: /** @type {false} */ (false),
         retryable,
         error: new AIError(
-          response.status === 401 || response.status === 403 ? 'AUTH_ERROR' : 'PROVIDER_ERROR',
+          response.status === 401 || response.status === 403
+            ? 'AUTH_ERROR'
+            : 'PROVIDER_ERROR',
           // The provider's own message is the useful part; it never contains the key.
           `${spec.label} returned ${response.status}: ${await readErrorMessage(response)}`
-        )
+        ),
       };
-      const retryAfterMs = parseRetryAfter(response.headers?.get('retry-after'));
+      const retryAfterMs = parseRetryAfter(
+        response.headers?.get('retry-after')
+      );
       return retryAfterMs === undefined ? result : { ...result, retryAfterMs };
     }
 
@@ -289,7 +306,12 @@ export function parseRetryAfter(value) {
 async function readErrorMessage(response) {
   try {
     const data = await response.json();
-    return data.error?.message || data.message || response.statusText || 'unknown error';
+    return (
+      data.error?.message ||
+      data.message ||
+      response.statusText ||
+      'unknown error'
+    );
   } catch {
     return response.statusText || 'unknown error';
   }

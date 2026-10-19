@@ -9,13 +9,18 @@ import {
   chunkContent,
   parseSentiment,
   parseTags,
-  wasTruncated
+  wasTruncated,
 } from './core/tasks.js';
-import { AIError } from './providers/ai-client.js';
+import { AIClient, AIError } from './providers/ai-client.js';
 import { StorageService } from './services/storage-service.js';
 import { NotificationManager } from './services/notification-manager.js';
-import { isValidQuestion, validateMessage } from './utils/validation-service.js';
+import {
+  isValidQuestion,
+  validateMessage,
+} from './utils/validation-service.js';
 import { Logger } from './utils/logger.js';
+import { documentKey } from './core/document.js';
+import { DocumentIndex } from './core/retrieval.js';
 
 /**
  * Sections summarized at once. Low enough to stay under typical per-minute
@@ -31,13 +36,37 @@ const EXPORT_SCHEMA_VERSION = 2;
  * @type {Record<string, { task: string, source: 'selection' | 'page', title: string }>}
  */
 const CONTEXT_MENU_TASKS = {
-  'genai-summarize-selection': { task: 'summary', source: 'selection', title: 'Summary' },
-  'genai-explain-selection': { task: 'insights', source: 'selection', title: 'Key points' },
-  'genai-translate-selection': { task: 'translation', source: 'selection', title: 'Translation' },
-  'genai-analyze-sentiment': { task: 'sentiment', source: 'selection', title: 'Sentiment' },
-  'genai-summarize-page': { task: 'summary', source: 'page', title: 'Page summary' },
-  'genai-extract-insights': { task: 'insights', source: 'page', title: 'Key insights' },
-  'genai-generate-tags': { task: 'tags', source: 'page', title: 'Smart tags' }
+  'genai-summarize-selection': {
+    task: 'summary',
+    source: 'selection',
+    title: 'Summary',
+  },
+  'genai-explain-selection': {
+    task: 'insights',
+    source: 'selection',
+    title: 'Key points',
+  },
+  'genai-translate-selection': {
+    task: 'translation',
+    source: 'selection',
+    title: 'Translation',
+  },
+  'genai-analyze-sentiment': {
+    task: 'sentiment',
+    source: 'selection',
+    title: 'Sentiment',
+  },
+  'genai-summarize-page': {
+    task: 'summary',
+    source: 'page',
+    title: 'Page summary',
+  },
+  'genai-extract-insights': {
+    task: 'insights',
+    source: 'page',
+    title: 'Key insights',
+  },
+  'genai-generate-tags': { task: 'tags', source: 'page', title: 'Smart tags' },
 };
 
 class BackgroundService {
@@ -46,6 +75,8 @@ class BackgroundService {
     this.configManager = new ConfigurationManager();
     this.storageService = new StorageService();
     this.notificationManager = new NotificationManager();
+    /** @type {Map<string, DocumentIndex>} */
+    this.documentIndexes = new Map();
 
     this.registerListeners();
     this.initialize();
@@ -73,7 +104,9 @@ class BackgroundService {
       this.handleMessage(message, sender, sendResponse);
       return true; // async sendResponse
     });
-    chrome.contextMenus.onClicked.addListener(this.handleContextMenu.bind(this));
+    chrome.contextMenus.onClicked.addListener(
+      this.handleContextMenu.bind(this)
+    );
     chrome.commands.onCommand.addListener(this.handleCommand.bind(this));
     chrome.alarms.onAlarm.addListener(this.handleAlarm.bind(this));
     chrome.alarms.create('cleanupOldData', { periodInMinutes: 1440 });
@@ -92,11 +125,23 @@ class BackgroundService {
 
     try {
       if (!validateMessage(message, sender)) {
-        throw new AIError('INVALID_MESSAGE', 'Malformed message or unknown sender');
+        throw new AIError(
+          'INVALID_MESSAGE',
+          'Malformed message or unknown sender'
+        );
       }
 
-      const data = await this.route(message.actionType, message.payload || {}, sender);
-      sendResponse({ success: true, data, requestId, processingTime: Date.now() - startTime });
+      const data = await this.route(
+        message.actionType,
+        message.payload || {},
+        sender
+      );
+      sendResponse({
+        success: true,
+        data,
+        requestId,
+        processingTime: Date.now() - startTime,
+      });
     } catch (error) {
       /** @type {any} */
       const err = error;
@@ -106,7 +151,7 @@ class BackgroundService {
         error: err.message,
         errorCode: err.code || 'UNKNOWN_ERROR',
         requestId,
-        processingTime: Date.now() - startTime
+        processingTime: Date.now() - startTime,
       });
     }
   }
@@ -126,10 +171,16 @@ class BackgroundService {
         return this.answerQuestion(payload);
 
       case 'TRANSLATE_CONTENT':
-        return this.runTask('translation', { ...payload, content: payload.text });
+        return this.runTask('translation', {
+          ...payload,
+          content: payload.text,
+        });
 
       case 'ANALYZE_SENTIMENT': {
-        const result = await this.runTask('sentiment', { ...payload, content: payload.text });
+        const result = await this.runTask('sentiment', {
+          ...payload,
+          content: payload.text,
+        });
         return { ...result, ...parseSentiment(result.text) };
       }
 
@@ -137,7 +188,10 @@ class BackgroundService {
         return this.runTask('insights', { ...payload, content: payload.text });
 
       case 'GENERATE_SMART_TAGS': {
-        const result = await this.runTask('tags', { ...payload, content: payload.text });
+        const result = await this.runTask('tags', {
+          ...payload,
+          content: payload.text,
+        });
         return { ...result, tags: parseTags(result.text) };
       }
 
@@ -158,14 +212,39 @@ class BackgroundService {
       case 'GET_PROVIDER_STATUS':
         return this.configManager.getProviderStatus();
 
+      case 'TEST_PROVIDER_CONNECTION': {
+        const client = new AIClient({
+          provider: payload.provider,
+          apiKey: payload.apiKey,
+          model: payload.model,
+          maxRetries: 0,
+          timeoutMs: 10000,
+        });
+        await client.complete('Reply with only OK.', 'Connection test.', 16);
+        return { model: client.model };
+      }
+
       case 'GET_HISTORY':
         return this.storageService.getAnalysisHistory();
+
+      case 'GET_DOCUMENT_HISTORY':
+        return this.getDocumentHistory(payload);
+
+      case 'CLEAR_DOCUMENT_CHAT':
+        return {
+          removed: await this.storageService.clearDocumentChat(
+            await documentKey(payload.url || '', payload.content)
+          ),
+        };
 
       case 'EXPORT_USER_DATA':
         return this.exportUserData();
 
       default:
-        throw new AIError('UNSUPPORTED_ACTION', `Unsupported action type: ${actionType}`);
+        throw new AIError(
+          'UNSUPPORTED_ACTION',
+          `Unsupported action type: ${actionType}`
+        );
     }
   }
 
@@ -181,18 +260,30 @@ class BackgroundService {
   async runTask(task, payload) {
     const content = (payload.content || '').trim();
     if (!content) {
-      throw new AIError('NO_CONTENT', 'No page content available for this action');
+      throw new AIError(
+        'NO_CONTENT',
+        'No page content available for this action'
+      );
     }
 
     const client = await this.configManager.createAIClient();
-    const prompt = buildPrompt(task, { ...payload, content, text: content, context: content });
-    const text = await client.complete(prompt.system, prompt.user, prompt.maxTokens);
+    const prompt = buildPrompt(task, {
+      ...payload,
+      content,
+      text: content,
+      context: content,
+    });
+    const text = await client.complete(
+      prompt.system,
+      prompt.user,
+      prompt.maxTokens
+    );
 
     return {
       text,
       provider: client.provider,
       model: client.model,
-      truncated: wasTruncated(content)
+      truncated: wasTruncated(content),
     };
   }
 
@@ -204,25 +295,48 @@ class BackgroundService {
   async summarize(payload) {
     const content = (payload.content || '').trim();
     if (!content) {
-      throw new AIError('NO_CONTENT', 'No page content available for this action');
+      throw new AIError(
+        'NO_CONTENT',
+        'No page content available for this action'
+      );
     }
 
+    const settings = await this.configManager.getUserPreferences();
+    payload = {
+      ...payload,
+      summaryType: payload.summaryType || settings.summaryType,
+      targetLength: payload.targetLength || settings.summaryLength,
+    };
+    const identity = await documentKey(payload.url || '', content);
     const client = await this.configManager.createAIClient();
+    const cacheKey = JSON.stringify([
+      'summary-v1',
+      identity,
+      client.provider,
+      client.model,
+      payload.summaryType,
+      payload.targetLength,
+    ]);
+    if (settings.features.saveHistory) {
+      const history = await this.storageService.getAnalysisHistory();
+      const saved = history.summaries.find(
+        entry => entry.cacheKey === cacheKey
+      );
+      if (saved) return { ...saved, cached: true };
+    }
     const { chunks, droppedChars } = chunkContent(content);
 
-    const result = chunks.length > 1
-      ? await this.summarizeInChunks(client, chunks, payload)
-      : { text: await this.completeTask(client, 'summary', { ...payload, content }) };
+    const result =
+      chunks.length > 1
+        ? await this.summarizeInChunks(client, chunks, payload)
+        : {
+            text: await this.completeTask(client, 'summary', {
+              ...payload,
+              content,
+            }),
+          };
 
-    await this.storageService.saveSummaryHistory({
-      originalContent: content.slice(0, 500),
-      summary: result.text,
-      options: { type: payload.summaryType, length: payload.targetLength },
-      provider: client.provider,
-      timestamp: Date.now()
-    });
-
-    return {
+    const summary = {
       text: result.text,
       summary: result.text,
       provider: client.provider,
@@ -232,9 +346,22 @@ class BackgroundService {
       truncated: droppedChars > 0,
       stats: {
         inputLength: content.length,
-        outputLength: result.text.length
-      }
+        outputLength: result.text.length,
+      },
     };
+    if ((await this.configManager.getUserPreferences()).features.saveHistory) {
+      await this.storageService.saveSummaryHistory({
+        ...summary,
+        originalContent: content.slice(0, 500),
+        options: { type: payload.summaryType, length: payload.targetLength },
+        url: payload.url || '',
+        title: payload.title || '',
+        documentKey: identity,
+        cacheKey,
+        timestamp: Date.now(),
+      });
+    }
+    return { ...summary, cached: false };
   }
 
   /**
@@ -257,12 +384,15 @@ class BackgroundService {
   async summarizeInChunks(client, chunks, payload) {
     this.logger.info(`Summarizing ${chunks.length} sections`);
 
-    const notes = await mapWithConcurrency(chunks, SECTION_CONCURRENCY, (chunk, index) =>
-      this.completeTask(client, 'summary-chunk', {
-        content: chunk,
-        index,
-        total: chunks.length
-      })
+    const notes = await mapWithConcurrency(
+      chunks,
+      SECTION_CONCURRENCY,
+      (chunk, index) =>
+        this.completeTask(client, 'summary-chunk', {
+          content: chunk,
+          index,
+          total: chunks.length,
+        })
     );
 
     const text = await this.completeTask(client, 'summary-reduce', {
@@ -270,7 +400,7 @@ class BackgroundService {
       total: chunks.length,
       title: payload.title,
       summaryType: payload.summaryType,
-      targetLength: payload.targetLength
+      targetLength: payload.targetLength,
     });
 
     return { text };
@@ -295,16 +425,80 @@ class BackgroundService {
       throw new AIError('INVALID_QUESTION', 'Question is empty or too long');
     }
 
-    const result = await this.runTask('question', { ...payload, content: payload.context });
-
-    await this.storageService.updateConversationHistory({
-      question: payload.question,
-      answer: result.text,
-      context: (payload.context || '').slice(0, 200),
-      timestamp: Date.now()
+    const context = (payload.context || '').trim();
+    if (!context)
+      throw new AIError(
+        'NO_CONTENT',
+        'No page content available for this action'
+      );
+    const identity = await documentKey(payload.url || '', context);
+    let index = this.documentIndexes.get(identity);
+    if (!index) {
+      index = new DocumentIndex(context);
+      if (this.documentIndexes.size >= 3) {
+        const oldest = this.documentIndexes.keys().next().value;
+        if (oldest) this.documentIndexes.delete(oldest);
+      }
+      this.documentIndexes.set(identity, index);
+    }
+    const previous = (payload.conversationHistory || []).findLast(
+      /** @param {any} m */ m => m.role === 'user'
+    );
+    const retrieved = index.retrieve(payload.question, previous?.content || '');
+    const result = await this.runTask('question', {
+      ...payload,
+      context: retrieved.context,
+      content: retrieved.context,
+      sourceContext: true,
     });
+    const settings = await this.configManager.getUserPreferences();
+    if (settings.features.saveHistory)
+      await this.storageService.updateConversationHistory({
+        question: payload.question,
+        answer: result.text,
+        context: context.slice(0, 200),
+        documentKey: identity,
+        url: payload.url || '',
+        title: payload.title || '',
+        sources: retrieved.sources.map(({ id, start, end, excerpt }) => ({
+          id,
+          start,
+          end,
+          text: excerpt,
+        })),
+        timestamp: Date.now(),
+      });
 
-    return { ...result, answer: result.text };
+    return {
+      ...result,
+      answer: result.text,
+      sources: retrieved.sources,
+      retrieval: retrieved.retrieval,
+    };
+  }
+
+  /** @param {any} payload */
+  async getDocumentHistory(payload) {
+    const settings = await this.configManager.getUserPreferences();
+    if (!settings.features.saveHistory)
+      return { summaries: [], conversations: [], memoryEnabled: false };
+    const identity = await documentKey(payload.url || '', payload.content);
+    const history = await this.storageService.getAnalysisHistory();
+    return {
+      memoryEnabled: true,
+      summaries: history.summaries
+        .filter(entry => entry.documentKey === identity)
+        .slice(0, 1),
+      conversations: history.conversations
+        .filter(
+          entry =>
+            entry.documentKey === identity &&
+            typeof entry.question === 'string' &&
+            typeof entry.answer === 'string'
+        )
+        .slice(0, 30)
+        .reverse(),
+    };
   }
 
   /**
@@ -320,7 +514,9 @@ class BackgroundService {
 
     let response;
     try {
-      response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
+      response = await chrome.tabs.sendMessage(tabId, {
+        action: 'extractContent',
+      });
     } catch (error) {
       /** @type {any} */
       const err = error;
@@ -332,7 +528,10 @@ class BackgroundService {
     }
 
     if (!response?.success) {
-      throw new AIError('EXTRACTION_FAILED', response?.error || 'Content extraction failed');
+      throw new AIError(
+        'EXTRACTION_FAILED',
+        response?.error || 'Content extraction failed'
+      );
     }
     return response.data;
   }
@@ -356,15 +555,17 @@ class BackgroundService {
    * @returns {Promise<any>}
    */
   async exportUserData() {
-    const { apiKeys: _apiKeys, ...settings } = await this.configManager.getUserPreferences();
-    const { summaries, conversations } = await this.storageService.getAnalysisHistory();
+    const { apiKeys: _apiKeys, ...settings } =
+      await this.configManager.getUserPreferences();
+    const { summaries, conversations } =
+      await this.storageService.getAnalysisHistory();
 
     return {
       settings,
       summaries,
       conversations,
       exportedAt: new Date().toISOString(),
-      schemaVersion: EXPORT_SCHEMA_VERSION
+      schemaVersion: EXPORT_SCHEMA_VERSION,
     };
   }
 
@@ -375,13 +576,41 @@ class BackgroundService {
 
     /** @type {chrome.contextMenus.CreateProperties[]} */
     const items = [
-      { id: 'genai-summarize-selection', title: 'Summarize selected text', contexts: ['selection'] },
-      { id: 'genai-explain-selection', title: 'Explain this selection', contexts: ['selection'] },
-      { id: 'genai-translate-selection', title: 'Translate selection', contexts: ['selection'] },
-      { id: 'genai-analyze-sentiment', title: 'Analyze sentiment', contexts: ['selection'] },
-      { id: 'genai-summarize-page', title: 'Summarize entire page', contexts: ['page'] },
-      { id: 'genai-extract-insights', title: 'Extract key insights', contexts: ['page'] },
-      { id: 'genai-generate-tags', title: 'Generate smart tags', contexts: ['page'] }
+      {
+        id: 'genai-summarize-selection',
+        title: 'Summarize selected text',
+        contexts: ['selection'],
+      },
+      {
+        id: 'genai-explain-selection',
+        title: 'Explain this selection',
+        contexts: ['selection'],
+      },
+      {
+        id: 'genai-translate-selection',
+        title: 'Translate selection',
+        contexts: ['selection'],
+      },
+      {
+        id: 'genai-analyze-sentiment',
+        title: 'Analyze sentiment',
+        contexts: ['selection'],
+      },
+      {
+        id: 'genai-summarize-page',
+        title: 'Summarize entire page',
+        contexts: ['page'],
+      },
+      {
+        id: 'genai-extract-insights',
+        title: 'Extract key insights',
+        contexts: ['page'],
+      },
+      {
+        id: 'genai-generate-tags',
+        title: 'Generate smart tags',
+        contexts: ['page'],
+      },
     ];
     items.forEach(item => chrome.contextMenus.create(item));
   }
@@ -395,19 +624,23 @@ class BackgroundService {
     if (!entry) return;
 
     try {
-      const content = entry.source === 'selection'
-        ? info.selectionText || ''
-        : (await this.extractPageContent(tab?.id)).mainText;
+      const content =
+        entry.source === 'selection'
+          ? info.selectionText || ''
+          : (await this.extractPageContent(tab?.id)).mainText;
 
       const settings = await this.configManager.getUserPreferences();
       const result = await this.runTask(entry.task, {
         content,
         summaryType: settings.summaryType,
         targetLength: 'short',
-        targetLanguage: settings.targetLanguage
+        targetLanguage: settings.targetLanguage,
       });
 
-      this.notificationManager.showSuccess(entry.title, truncateForNotification(result.text));
+      this.notificationManager.showSuccess(
+        entry.title,
+        truncateForNotification(result.text)
+      );
     } catch (error) {
       /** @type {any} */
       const err = error;
@@ -419,7 +652,10 @@ class BackgroundService {
   /** @param {string} command */
   async handleCommand(command) {
     if (command === 'quick-summarize') {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
       await this.handleContextMenu(
         /** @type {any} */ ({ menuItemId: 'genai-summarize-page' }),
         tab
@@ -470,12 +706,15 @@ export async function mapWithConcurrency(items, limit, fn) {
   const results = new Array(items.length);
   let next = 0;
 
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await fn(/** @type {T} */ (items[index]), index);
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (next < items.length) {
+        const index = next++;
+        results[index] = await fn(/** @type {T} */ (items[index]), index);
+      }
     }
-  });
+  );
 
   await Promise.all(workers);
   return results;
