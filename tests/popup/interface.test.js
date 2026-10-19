@@ -22,7 +22,7 @@ const PAGE = {
   url: 'https://example.com/article',
   mainText: 'The article body. It has several words in it.',
   headings: [{ level: 1, text: 'An Article' }],
-  language: 'en'
+  language: 'en',
 };
 
 /** Canned responses keyed by actionType, for the mocked message channel. */
@@ -43,7 +43,11 @@ function sentPayload(actionType) {
 }
 
 /** Load the popup with the given preference and page state. */
-async function openPopup({ preferences = {}, providerStatus = {}, overrides = {} } = {}) {
+async function openPopup({
+  preferences = {},
+  providerStatus = {},
+  overrides = {},
+} = {}) {
   responses = {
     GET_USER_PREFERENCES: {
       success: true,
@@ -52,22 +56,30 @@ async function openPopup({ preferences = {}, providerStatus = {}, overrides = {}
         summaryLength: 'medium',
         targetLanguage: 'en',
         theme: 'light',
-        ...preferences
-      }
+        ...preferences,
+      },
     },
     GET_PROVIDER_STATUS: {
       success: true,
-      data: { provider: 'anthropic', configured: true, ...providerStatus }
+      data: { provider: 'anthropic', configured: true, ...providerStatus },
     },
     EXTRACT_PAGE_CONTENT: { success: true, data: PAGE },
-    ...overrides
+    GET_DOCUMENT_HISTORY: {
+      success: true,
+      data: { summaries: [], conversations: [], memoryEnabled: true },
+    },
+    ...overrides,
   };
 
-  chrome.runtime.sendMessage.mockImplementation(async ({ actionType }) =>
-    responses[actionType] ?? { success: false, error: `no stub for ${actionType}` }
+  chrome.runtime.sendMessage.mockImplementation(
+    async ({ actionType }) =>
+      responses[actionType] ?? {
+        success: false,
+        error: `no stub for ${actionType}`,
+      }
   );
   chrome.tabs.query.mockResolvedValue([
-    { id: 7, url: 'https://example.com/article', title: 'An Article' }
+    { id: 7, url: 'https://example.com/article', title: 'An Article' },
   ]);
 
   document.body.className = '';
@@ -77,12 +89,276 @@ async function openPopup({ preferences = {}, providerStatus = {}, overrides = {}
   await import('../../scripts/popup-main.js');
   document.dispatchEvent(new Event('DOMContentLoaded'));
 
-  await vi.waitFor(() => expect(el('loading-overlay').style.display).toBe('none'));
+  await vi.waitFor(() =>
+    expect(el('loading-overlay').style.display).toBe('none')
+  );
 }
 
 describe('popup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('learning workspace', () => {
+    it('handles an empty document with a visible error', async () => {
+      await openPopup({
+        overrides: {
+          EXTRACT_PAGE_CONTENT: {
+            success: true,
+            data: { ...PAGE, mainText: '' },
+          },
+        },
+      });
+      expect(text('current-page-status')).toContain(
+        'No readable document text'
+      );
+      expect(text('toast-container')).toContain('No readable document text');
+    });
+
+    it('shows partial-analysis coverage instead of implying a whole-document result', async () => {
+      await openPopup({
+        overrides: {
+          EXTRACT_KEY_INSIGHTS: {
+            success: true,
+            data: { text: '- A useful insight', truncated: true },
+          },
+        },
+      });
+      document.querySelector('.analyze-btn[data-type="insights"]').click();
+      await vi.waitFor(() =>
+        expect(text('insights-result')).toContain('first 24,000 characters')
+      );
+      expect(text('insights-result')).toContain('A useful insight');
+    });
+
+    it('does not discard a second question while the first answer is pending', async () => {
+      let finish;
+      const pending = new Promise(resolve => {
+        finish = resolve;
+      });
+      await openPopup({ overrides: { ANSWER_CONTEXTUAL_QUESTION: pending } });
+      el('chat-input').value = 'First question';
+      el('send-chat-btn').click();
+      el('chat-input').value = 'Keep this second question';
+      el('send-chat-btn').click();
+      expect(el('chat-input').value).toBe('Keep this second question');
+      expect(
+        chrome.runtime.sendMessage.mock.calls.filter(
+          ([message]) => message.actionType === 'ANSWER_CONTEXTUAL_QUESTION'
+        )
+      ).toHaveLength(1);
+      finish({ success: true, data: { answer: 'The first answer' } });
+      await vi.waitFor(() =>
+        expect(text('chat-history')).toContain('The first answer')
+      );
+    });
+
+    it('rejects an oversized import before reading it', async () => {
+      await openPopup();
+      const read = vi.fn();
+      Object.defineProperty(el('document-file'), 'files', {
+        configurable: true,
+        value: [{ name: 'huge.txt', size: 8_000_001, text: read }],
+      });
+      el('document-file').dispatchEvent(new Event('change'));
+      await vi.waitFor(() =>
+        expect(text('toast-container')).toContain('File is too large')
+      );
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed clear without hiding the existing thread', async () => {
+      await openPopup({
+        overrides: {
+          CLEAR_DOCUMENT_CHAT: { success: false, error: 'Storage unavailable' },
+        },
+      });
+      el('chat-history').textContent = 'Existing question';
+      el('clear-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('toast-container')).toContain('Storage unavailable')
+      );
+      expect(text('chat-history')).toBe('Existing question');
+    });
+
+    it('uses an explicit source tab for the full-page workspace', async () => {
+      window.history.replaceState(null, '', '?workspace=1&tabId=7');
+      chrome.tabs.get.mockResolvedValueOnce({ id: 7, title: PAGE.title });
+      try {
+        await openPopup();
+        expect(document.body.classList.contains('workspace')).toBe(true);
+        expect(chrome.tabs.get).toHaveBeenCalledWith(7);
+        expect(text('current-page-title')).toBe(PAGE.title);
+      } finally {
+        window.history.replaceState(null, '', '/');
+      }
+    });
+    it('restores the document thread and saved summary', async () => {
+      await openPopup({
+        overrides: {
+          GET_DOCUMENT_HISTORY: {
+            success: true,
+            data: {
+              memoryEnabled: true,
+              conversations: [
+                {
+                  question: 'Earlier question',
+                  answer: 'Earlier answer',
+                  sources: [{ id: 'S1', text: '<img src=x onerror=alert(1)>' }],
+                },
+              ],
+              summaries: [
+                {
+                  summary: 'Saved notes',
+                  provider: 'anthropic',
+                  model: 'saved-model',
+                  sections: 1,
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(text('chat-history')).toContain('Earlier question');
+      expect(text('chat-history')).toContain('Earlier answer');
+      expect(el('chat-history').querySelector('img')).toBeNull();
+      expect(text('summary-confidence')).toContain('Saved summary');
+      expect(text('summary-content')).toBe('Saved notes');
+      expect(text('chat-memory-status')).toContain('Restored 1');
+    });
+
+    it('opens a persistent workspace tied to the source tab', async () => {
+      await openPopup();
+      el('open-workspace-btn').click();
+      expect(chrome.tabs.create).toHaveBeenCalledWith({
+        url: 'chrome-extension://mock-extension-id/popup.html?workspace=1&tabId=7',
+      });
+    });
+
+    it('clears this document thread through the background route', async () => {
+      await openPopup({
+        overrides: {
+          CLEAR_DOCUMENT_CHAT: { success: true, data: { removed: 1 } },
+        },
+      });
+      el('clear-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('chat-memory-status')).toContain('Chat cleared')
+      );
+      expect(sentPayload('CLEAR_DOCUMENT_CHAT')).toEqual({
+        url: PAGE.url,
+        content: PAGE.mainText,
+      });
+      expect(text('chat-history')).toBe('');
+    });
+
+    it('reports disabled memory and coverage of retrieved passages', async () => {
+      await openPopup({
+        overrides: {
+          GET_DOCUMENT_HISTORY: {
+            success: true,
+            data: { memoryEnabled: false },
+          },
+          ANSWER_CONTEXTUAL_QUESTION: {
+            success: true,
+            data: {
+              answer: 'From the ending [S40]',
+              sources: [{ id: 'S40', text: 'Source ending.' }],
+              retrieval: { mode: 'matched', total: 40 },
+            },
+          },
+        },
+      });
+      expect(text('chat-memory-status')).toContain('memory is off');
+      el('chat-input').value = 'What happened at the end?';
+      el('send-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('chat-history')).toContain('1 of 40 passages used')
+      );
+      expect(text('chat-history')).toContain('Source ending.');
+    });
+
+    it('imports a text book locally without issuing an AI request', async () => {
+      await openPopup();
+      const input = el('document-file');
+      Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [
+          {
+            name: 'my-book.txt',
+            size: 20,
+            text: async () => 'A local book about learning.',
+          },
+        ],
+      });
+      input.dispatchEvent(new Event('change'));
+      await vi.waitFor(() =>
+        expect(text('current-page-title')).toBe('my-book.txt')
+      );
+      expect(sentPayload('GET_DOCUMENT_HISTORY')).toEqual({
+        url: 'local-document:my-book.txt',
+        content: 'A local book about learning.',
+      });
+      expect(sentPayload('GENERATE_CONTENT_SUMMARY')).toBeUndefined();
+    });
+
+    it('rejects unsupported files without pretending they were read', async () => {
+      await openPopup();
+      const input = el('document-file');
+      Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'book.pdf', size: 20 }],
+      });
+      input.dispatchEvent(new Event('change'));
+      await vi.waitFor(() =>
+        expect(text('toast-container')).toContain(
+          'PDF and EPUB import is not available'
+        )
+      );
+      expect(text('current-page-title')).toBe(PAGE.title);
+    });
+
+    it('clears prior document results and live links when a book is imported', async () => {
+      await openPopup();
+      el('translation-results').style.display = 'block';
+      el('insights-result').textContent = 'Insight about the old article';
+      const input = el('document-file');
+      Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [
+          {
+            name: 'new.txt',
+            size: 20,
+            text: async () => 'A different document.',
+          },
+        ],
+      });
+      input.dispatchEvent(new Event('change'));
+      await vi.waitFor(() =>
+        expect(text('current-page-title')).toBe('new.txt')
+      );
+      expect(el('translation-results').style.display).toBe('none');
+      expect(text('insights-result')).not.toContain('old article');
+      el('extract-links-btn').click();
+      expect(text('tools-results-content')).toContain(
+        'Imported text has no live page links'
+      );
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('persists translation preferences on change', async () => {
+      await openPopup({
+        overrides: { UPDATE_USER_PREFERENCES: { success: true } },
+      });
+      el('target-language').value = 'fr';
+      el('target-language').dispatchEvent(new Event('change'));
+      await vi.waitFor(() =>
+        expect(sentPayload('UPDATE_USER_PREFERENCES')).toEqual({
+          targetLanguage: 'fr',
+          sourceLanguage: 'auto',
+        })
+      );
+    });
   });
 
   describe('startup', () => {
@@ -97,7 +373,9 @@ describe('popup', () => {
     // Extensions cannot read chrome:// or Web Store pages. Saying so beats a
     // silent popup that looks like it is still loading.
     it('explains a page it is not allowed to read', async () => {
-      chrome.tabs.query.mockResolvedValue([{ id: 7, url: 'chrome://extensions' }]);
+      chrome.tabs.query.mockResolvedValue([
+        { id: 7, url: 'chrome://extensions' },
+      ]);
       chrome.runtime.sendMessage.mockResolvedValue({ success: true, data: {} });
 
       document.body.innerHTML = POPUP_BODY;
@@ -105,7 +383,9 @@ describe('popup', () => {
       await import('../../scripts/popup-main.js');
       document.dispatchEvent(new Event('DOMContentLoaded'));
 
-      await vi.waitFor(() => expect(text('current-page-title')).toMatch(/cannot be read/i));
+      await vi.waitFor(() =>
+        expect(text('current-page-title')).toMatch(/cannot be read/i)
+      );
       expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith(
         expect.objectContaining({ actionType: 'EXTRACT_PAGE_CONTENT' })
       );
@@ -114,8 +394,11 @@ describe('popup', () => {
     it('surfaces an extraction failure in the header', async () => {
       await openPopup({
         overrides: {
-          EXTRACT_PAGE_CONTENT: { success: false, error: 'Cannot read this page (no receiver)' }
-        }
+          EXTRACT_PAGE_CONTENT: {
+            success: false,
+            error: 'Cannot read this page (no receiver)',
+          },
+        },
       });
 
       expect(el('page-info').title).toMatch(/no receiver/);
@@ -150,13 +433,15 @@ describe('popup', () => {
           summaryType: 'tldr',
           summaryLength: 'long',
           targetLanguage: 'fr',
-          theme: 'dark'
-        }
+          theme: 'dark',
+        },
       });
 
       expect(el('summary-type').value).toBe('tldr');
       expect(el('target-language').value).toBe('fr');
-      expect(document.querySelector('input[name="summary-length"]:checked').value).toBe('long');
+      expect(
+        document.querySelector('input[name="summary-length"]:checked').value
+      ).toBe('long');
       expect(document.body.classList.contains('dark-theme')).toBe(true);
     });
 
@@ -166,7 +451,9 @@ describe('popup', () => {
       el('theme-toggle').click();
 
       await vi.waitFor(() => {
-        expect(sentPayload('UPDATE_USER_PREFERENCES')).toEqual({ theme: 'dark' });
+        expect(sentPayload('UPDATE_USER_PREFERENCES')).toEqual({
+          theme: 'dark',
+        });
       });
       expect(document.body.classList.contains('dark-theme')).toBe(true);
     });
@@ -180,8 +467,8 @@ describe('popup', () => {
         provider: 'anthropic',
         model: 'claude-opus-5',
         sections: 3,
-        droppedChars: 0
-      }
+        droppedChars: 0,
+      },
     };
 
     // `popup.html` ships with the "short" radio marked `checked`. The stored
@@ -190,17 +477,19 @@ describe('popup', () => {
     it('sends the selected style and the saved length, not the markup default', async () => {
       await openPopup({
         preferences: { summaryLength: 'medium' },
-        overrides: { GENERATE_CONTENT_SUMMARY: SUMMARY }
+        overrides: { GENERATE_CONTENT_SUMMARY: SUMMARY },
       });
       el('summary-type').value = 'executive';
 
       el('generate-summary-btn').click();
 
-      await vi.waitFor(() => expect(sentPayload('GENERATE_CONTENT_SUMMARY')).toBeTruthy());
+      await vi.waitFor(() =>
+        expect(sentPayload('GENERATE_CONTENT_SUMMARY')).toBeTruthy()
+      );
       expect(sentPayload('GENERATE_CONTENT_SUMMARY')).toMatchObject({
         content: PAGE.mainText,
         summaryType: 'executive',
-        targetLength: 'medium'
+        targetLength: 'medium',
       });
     });
 
@@ -209,10 +498,14 @@ describe('popup', () => {
 
       el('generate-summary-btn').click();
 
-      await vi.waitFor(() => expect(el('summary-results').style.display).toBe('block'));
+      await vi.waitFor(() =>
+        expect(el('summary-results').style.display).toBe('block')
+      );
       expect(el('summary-content').innerHTML).toContain('<li>point one</li>');
       expect(text('summary-provider')).toBe('anthropic · claude-opus-5');
-      expect(text('summary-confidence')).toBe('Whole page, summarized across 3 sections');
+      expect(text('summary-confidence')).toBe(
+        'Whole page, summarized across 3 sections'
+      );
     });
 
     // A page whose tail was dropped must not read as a complete summary.
@@ -221,22 +514,27 @@ describe('popup', () => {
         overrides: {
           GENERATE_CONTENT_SUMMARY: {
             success: true,
-            data: { ...SUMMARY.data, sections: 8, droppedChars: 51000 }
-          }
-        }
+            data: { ...SUMMARY.data, sections: 8, droppedChars: 51000 },
+          },
+        },
       });
 
       el('generate-summary-btn').click();
 
-      await vi.waitFor(() => expect(text('summary-confidence')).toMatch(/not included/));
+      await vi.waitFor(() =>
+        expect(text('summary-confidence')).toMatch(/not included/)
+      );
       expect(text('summary-confidence')).toContain('51,000');
     });
 
     it('shows the provider error instead of an empty result', async () => {
       await openPopup({
         overrides: {
-          GENERATE_CONTENT_SUMMARY: { success: false, error: 'Anthropic returned 401: bad key' }
-        }
+          GENERATE_CONTENT_SUMMARY: {
+            success: false,
+            error: 'Anthropic returned 401: bad key',
+          },
+        },
       });
 
       el('generate-summary-btn').click();
@@ -252,24 +550,33 @@ describe('popup', () => {
 
       el('export-summary-btn').click();
 
-      expect(el('toast-container').textContent).toMatch(/Generate a summary first/);
+      expect(el('toast-container').textContent).toMatch(
+        /Generate a summary first/
+      );
     });
 
     it('does nothing when the page could not be read', async () => {
       await openPopup({
-        overrides: { EXTRACT_PAGE_CONTENT: { success: false, error: 'blocked' } }
+        overrides: {
+          EXTRACT_PAGE_CONTENT: { success: false, error: 'blocked' },
+        },
       });
       chrome.runtime.sendMessage.mockClear();
 
       el('generate-summary-btn').click();
 
-      expect(el('toast-container').textContent).toMatch(/No readable page content/);
+      expect(el('toast-container').textContent).toMatch(
+        /No readable page content/
+      );
       expect(sentPayload('GENERATE_CONTENT_SUMMARY')).toBeUndefined();
     });
   });
 
   describe('chat', () => {
-    const ANSWER = { success: true, data: { answer: 'It is about extensions.', truncated: false } };
+    const ANSWER = {
+      success: true,
+      data: { answer: 'It is about extensions.', truncated: false },
+    };
 
     it('sends the question with the page as context and renders the answer', async () => {
       await openPopup({ overrides: { ANSWER_CONTEXTUAL_QUESTION: ANSWER } });
@@ -278,11 +585,13 @@ describe('popup', () => {
       el('send-chat-btn').click();
 
       await vi.waitFor(() => {
-        expect(el('chat-history').textContent).toContain('It is about extensions.');
+        expect(el('chat-history').textContent).toContain(
+          'It is about extensions.'
+        );
       });
       expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')).toMatchObject({
         question: 'What is this about?',
-        context: PAGE.mainText
+        context: PAGE.mainText,
       });
       expect(el('chat-input').value).toBe('');
     });
@@ -303,9 +612,9 @@ describe('popup', () => {
         overrides: {
           ANSWER_CONTEXTUAL_QUESTION: {
             success: true,
-            data: { answer: 'Partial answer.', truncated: true }
-          }
-        }
+            data: { answer: 'Partial answer.', truncated: true },
+          },
+        },
       });
 
       for (const question of ['first?', 'second?']) {
@@ -316,19 +625,24 @@ describe('popup', () => {
         );
       }
 
-      const notes = el('chat-history').textContent.match(/only its first section/g) || [];
+      const notes =
+        el('chat-history').textContent.match(/only its first section/g) || [];
       expect(notes).toHaveLength(1);
     });
 
     it('puts a failure in the thread rather than losing it', async () => {
       await openPopup({
-        overrides: { ANSWER_CONTEXTUAL_QUESTION: { success: false, error: 'rate limited' } }
+        overrides: {
+          ANSWER_CONTEXTUAL_QUESTION: { success: false, error: 'rate limited' },
+        },
       });
       el('chat-input').value = 'anything?';
 
       el('send-chat-btn').click();
 
-      await vi.waitFor(() => expect(el('chat-history').textContent).toContain('rate limited'));
+      await vi.waitFor(() =>
+        expect(el('chat-history').textContent).toContain('rate limited')
+      );
     });
 
     it('sends on Enter but not on Shift+Enter', async () => {
@@ -336,21 +650,31 @@ describe('popup', () => {
 
       el('chat-input').value = 'newline please';
       el('chat-input').dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true })
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          shiftKey: true,
+          bubbles: true,
+        })
       );
       expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')).toBeUndefined();
 
       el('chat-input').dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
       );
-      await vi.waitFor(() => expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')).toBeTruthy());
+      await vi.waitFor(() =>
+        expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')).toBeTruthy()
+      );
     });
   });
 
   describe('translation', () => {
     const TRANSLATION = {
       success: true,
-      data: { text: 'Le corps de l\'article.', provider: 'anthropic', model: 'claude-opus-5' }
+      data: {
+        text: "Le corps de l'article.",
+        provider: 'anthropic',
+        model: 'claude-opus-5',
+      },
     };
 
     it('sends the whole page when the checkbox is ticked', async () => {
@@ -360,10 +684,12 @@ describe('popup', () => {
 
       el('translate-btn').click();
 
-      await vi.waitFor(() => expect(sentPayload('TRANSLATE_CONTENT')).toBeTruthy());
+      await vi.waitFor(() =>
+        expect(sentPayload('TRANSLATE_CONTENT')).toBeTruthy()
+      );
       expect(sentPayload('TRANSLATE_CONTENT')).toMatchObject({
         text: PAGE.mainText,
-        targetLanguage: 'fr'
+        targetLanguage: 'fr',
       });
     });
 
@@ -373,8 +699,12 @@ describe('popup', () => {
 
       el('translate-btn').click();
 
-      await vi.waitFor(() => expect(sentPayload('TRANSLATE_CONTENT')).toBeTruthy());
-      expect(sentPayload('TRANSLATE_CONTENT').text.length).toBeLessThanOrEqual(2000);
+      await vi.waitFor(() =>
+        expect(sentPayload('TRANSLATE_CONTENT')).toBeTruthy()
+      );
+      expect(sentPayload('TRANSLATE_CONTENT').text.length).toBeLessThanOrEqual(
+        2000
+      );
     });
 
     it('swaps the language selectors, unless the source is auto-detect', async () => {
@@ -399,7 +729,9 @@ describe('popup', () => {
 
       document.querySelector('.analyze-btn[data-type="readability"]').click();
 
-      await vi.waitFor(() => expect(text('readability-result')).toMatch(/Flesch reading ease/));
+      await vi.waitFor(() =>
+        expect(text('readability-result')).toMatch(/Flesch reading ease/)
+      );
       expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
     });
 
@@ -408,21 +740,26 @@ describe('popup', () => {
         overrides: {
           ANALYZE_SENTIMENT: {
             success: true,
-            data: { sentiment: 'positive', reason: 'upbeat tone' }
-          }
-        }
+            data: { sentiment: 'positive', reason: 'upbeat tone' },
+          },
+        },
       });
 
       document.querySelector('.analyze-btn[data-type="sentiment"]').click();
 
-      await vi.waitFor(() => expect(text('sentiment-result')).toBe('positive — upbeat tone'));
+      await vi.waitFor(() =>
+        expect(text('sentiment-result')).toBe('positive — upbeat tone')
+      );
     });
 
     it('renders tags as a list', async () => {
       await openPopup({
         overrides: {
-          GENERATE_SMART_TAGS: { success: true, data: { tags: ['browsers', 'ai'] } }
-        }
+          GENERATE_SMART_TAGS: {
+            success: true,
+            data: { tags: ['browsers', 'ai'] },
+          },
+        },
       });
 
       document.querySelector('.analyze-btn[data-type="tags"]').click();
@@ -432,12 +769,19 @@ describe('popup', () => {
 
     it('puts an analysis failure in the panel it belongs to', async () => {
       await openPopup({
-        overrides: { EXTRACT_KEY_INSIGHTS: { success: false, error: 'provider unreachable' } }
+        overrides: {
+          EXTRACT_KEY_INSIGHTS: {
+            success: false,
+            error: 'provider unreachable',
+          },
+        },
       });
 
       document.querySelector('.analyze-btn[data-type="insights"]').click();
 
-      await vi.waitFor(() => expect(text('insights-result')).toBe('provider unreachable'));
+      await vi.waitFor(() =>
+        expect(text('insights-result')).toBe('provider unreachable')
+      );
     });
   });
 
@@ -454,16 +798,24 @@ describe('popup', () => {
 
     it('lists links read straight from the page', async () => {
       await openPopup();
+      chrome.tabs.query.mockResolvedValue([
+        { id: 999, url: 'chrome-extension://workspace' },
+      ]);
       chrome.tabs.sendMessage.mockResolvedValue({
         success: true,
-        data: [{ text: 'Docs', href: 'https://example.com/docs' }]
+        data: [{ text: 'Docs', href: 'https://example.com/docs' }],
       });
 
       el('extract-links-btn').click();
 
       await vi.waitFor(() =>
-        expect(el('tools-results-content').textContent).toContain('example.com/docs')
+        expect(el('tools-results-content').textContent).toContain(
+          'example.com/docs'
+        )
       );
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, {
+        action: 'extractLinks',
+      });
     });
 
     // Link text comes from the page, so it is untrusted and must not be markup.
@@ -471,12 +823,16 @@ describe('popup', () => {
       await openPopup();
       chrome.tabs.sendMessage.mockResolvedValue({
         success: true,
-        data: [{ text: '<img src=x onerror=alert(1)>', href: 'https://example.com' }]
+        data: [
+          { text: '<img src=x onerror=alert(1)>', href: 'https://example.com' },
+        ],
       });
 
       el('extract-links-btn').click();
 
-      await vi.waitFor(() => expect(el('tools-results-content').innerHTML).toContain('&lt;img'));
+      await vi.waitFor(() =>
+        expect(el('tools-results-content').innerHTML).toContain('&lt;img')
+      );
       expect(el('tools-results-content').querySelector('img')).toBeNull();
     });
 
@@ -491,7 +847,9 @@ describe('popup', () => {
 
     it('reports an export failure instead of a success toast', async () => {
       await openPopup({
-        overrides: { EXPORT_USER_DATA: { success: false, error: 'storage unavailable' } }
+        overrides: {
+          EXPORT_USER_DATA: { success: false, error: 'storage unavailable' },
+        },
       });
 
       el('export-data-btn').click();
@@ -515,7 +873,9 @@ describe('popup', () => {
 
   describe('the message channel itself failing', () => {
     it('reports a dead service worker rather than hanging', async () => {
-      chrome.tabs.query.mockResolvedValue([{ id: 7, url: 'https://example.com' }]);
+      chrome.tabs.query.mockResolvedValue([
+        { id: 7, url: 'https://example.com' },
+      ]);
       chrome.runtime.sendMessage.mockRejectedValue(
         new Error('Could not establish connection')
       );
@@ -525,7 +885,9 @@ describe('popup', () => {
       await import('../../scripts/popup-main.js');
       document.dispatchEvent(new Event('DOMContentLoaded'));
 
-      await vi.waitFor(() => expect(text('provider-name')).toBe('Service unavailable'));
+      await vi.waitFor(() =>
+        expect(text('provider-name')).toBe('Service unavailable')
+      );
     });
   });
 });

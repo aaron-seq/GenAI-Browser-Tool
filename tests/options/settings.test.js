@@ -22,6 +22,7 @@ const OPTIONS_MARKUP = `
   <input id="anthropic-model" type="text">
   <input id="openai-model" type="text">
   <input id="gemini-model" type="text">
+  <button data-test-provider="anthropic">Test connection</button><p id="anthropic-test-status"></p>
 
   <select id="summary-type-pref">
     <option value="key-points">Key points</option>
@@ -31,6 +32,8 @@ const OPTIONS_MARKUP = `
     <option value="medium">Medium</option>
     <option value="long">Long</option>
   </select>
+  <select id="target-language-pref"><option value="en">English</option><option value="fr">French</option></select>
+  <select id="source-language-pref"><option value="auto">Auto-detect</option><option value="fr">French</option></select>
 
   <input id="contextMenus" type="checkbox">
   <input id="notifications" type="checkbox">
@@ -78,6 +81,64 @@ async function loadPage(stored = {}) {
 }
 
 describe('options page', () => {
+  it.each([
+    [
+      'success',
+      { success: true, data: { model: 'tested-model' } },
+      /Connected/,
+    ],
+    [
+      'authentication failure',
+      { success: false, error: 'Anthropic returned 401: invalid key' },
+      /invalid key/,
+    ],
+  ])(
+    'tests a provider connection on demand: %s',
+    async (_label, response, expected) => {
+      await loadPage({ apiKeys: { anthropic: 'test-key' } });
+      chrome.runtime.sendMessage.mockResolvedValue(response);
+      const button = document.querySelector('[data-test-provider]');
+      button.click();
+      await vi.waitFor(() =>
+        expect(
+          document.getElementById('anthropic-test-status').textContent
+        ).toMatch(expected)
+      );
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actionType: 'TEST_PROVIDER_CONNECTION',
+          payload: { provider: 'anthropic', apiKey: 'test-key', model: '' },
+        })
+      );
+      expect(button.disabled).toBe(false);
+    }
+  );
+
+  it('reports a network error without retrying or blocking settings', async () => {
+    await loadPage({ apiKeys: { anthropic: 'test-key' } });
+    chrome.runtime.sendMessage.mockResolvedValue({
+      success: false,
+      error: 'Failed to fetch',
+    });
+    document.querySelector('[data-test-provider]').click();
+    await vi.waitFor(() =>
+      expect(
+        document.getElementById('anthropic-test-status').textContent
+      ).toMatch(/Failed to fetch/)
+    );
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    change('anthropic-key', 'replacement-key');
+    await vi.waitFor(() =>
+      expect(lastSaved().apiKeys.anthropic).toBe('replacement-key')
+    );
+  });
+  it('stores default target and source translation languages', async () => {
+    await loadPage();
+    change('target-language-pref', 'fr');
+    await vi.waitFor(() => expect(lastSaved().targetLanguage).toBe('fr'));
+    change('source-language-pref', 'fr');
+    await vi.waitFor(() => expect(lastSaved().sourceLanguage).toBe('fr'));
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     chrome.storage.sync.set.mockResolvedValue(undefined);
@@ -91,7 +152,11 @@ describe('options page', () => {
         models: { openai: 'gpt-4o' },
         summaryType: 'tldr',
         summaryLength: 'long',
-        features: { contextMenus: false, notifications: true, saveHistory: true }
+        features: {
+          contextMenus: false,
+          notifications: true,
+          saveHistory: true,
+        },
       });
 
       await vi.waitFor(() => {
@@ -117,7 +182,11 @@ describe('options page', () => {
 
   describe('saving', () => {
     beforeEach(async () => {
-      await loadPage({ preferredProvider: 'anthropic', apiKeys: {}, models: {} });
+      await loadPage({
+        preferredProvider: 'anthropic',
+        apiKeys: {},
+        models: {},
+      });
       chrome.storage.sync.set.mockClear();
     });
 
@@ -127,30 +196,40 @@ describe('options page', () => {
     it('stores an API key under apiKeys.<provider>', async () => {
       change('openai-key', 'sk-typed');
 
-      await vi.waitFor(() => expect(chrome.storage.sync.set).toHaveBeenCalled());
+      await vi.waitFor(() =>
+        expect(chrome.storage.sync.set).toHaveBeenCalled()
+      );
       expect(lastSaved().apiKeys.openai).toBe('sk-typed');
     });
 
     it('stores a model override under models.<provider>', async () => {
       change('gemini-model', 'gemini-3-pro');
 
-      await vi.waitFor(() => expect(chrome.storage.sync.set).toHaveBeenCalled());
+      await vi.waitFor(() =>
+        expect(chrome.storage.sync.set).toHaveBeenCalled()
+      );
       expect(lastSaved().models.gemini).toBe('gemini-3-pro');
     });
 
     it('trims whitespace pasted around a key', async () => {
       change('anthropic-key', '  sk-ant-padded  ');
 
-      await vi.waitFor(() => expect(chrome.storage.sync.set).toHaveBeenCalled());
+      await vi.waitFor(() =>
+        expect(chrome.storage.sync.set).toHaveBeenCalled()
+      );
       expect(lastSaved().apiKeys.anthropic).toBe('sk-ant-padded');
     });
 
     it('stores the selected provider', async () => {
-      const radio = /** @type {HTMLInputElement} */ (document.getElementById('p-gemini'));
+      const radio = /** @type {HTMLInputElement} */ (
+        document.getElementById('p-gemini')
+      );
       radio.checked = true;
       radio.dispatchEvent(new Event('change', { bubbles: true }));
 
-      await vi.waitFor(() => expect(chrome.storage.sync.set).toHaveBeenCalled());
+      await vi.waitFor(() =>
+        expect(chrome.storage.sync.set).toHaveBeenCalled()
+      );
       expect(lastSaved().preferredProvider).toBe('gemini');
     });
 
@@ -163,11 +242,15 @@ describe('options page', () => {
     });
 
     it('stores a checkbox under features.<id>', async () => {
-      const box = /** @type {HTMLInputElement} */ (document.getElementById('notifications'));
+      const box = /** @type {HTMLInputElement} */ (
+        document.getElementById('notifications')
+      );
       box.checked = false;
       box.dispatchEvent(new Event('change', { bubbles: true }));
 
-      await vi.waitFor(() => expect(chrome.storage.sync.set).toHaveBeenCalled());
+      await vi.waitFor(() =>
+        expect(chrome.storage.sync.set).toHaveBeenCalled()
+      );
       expect(lastSaved().features.notifications).toBe(false);
     });
 
@@ -175,20 +258,30 @@ describe('options page', () => {
       change('openai-key', 'sk-typed');
 
       await vi.waitFor(() => {
-        expect(document.getElementById('save-indicator').classList.contains('visible')).toBe(true);
+        expect(
+          document
+            .getElementById('save-indicator')
+            .classList.contains('visible')
+        ).toBe(true);
       });
-      expect(document.querySelector('#save-indicator .text').textContent).toBe('Settings saved');
+      expect(document.querySelector('#save-indicator .text').textContent).toBe(
+        'Settings saved'
+      );
     });
 
     // A write that fails and still says "Settings saved" is the worst outcome
     // here: the user closes the page believing their key is stored.
     it('says so when the write fails instead of reporting success', async () => {
-      chrome.storage.sync.set.mockRejectedValue(new Error('QUOTA_BYTES exceeded'));
+      chrome.storage.sync.set.mockRejectedValue(
+        new Error('QUOTA_BYTES exceeded')
+      );
 
       change('openai-key', 'sk-typed');
 
       await vi.waitFor(() => {
-        const text = document.querySelector('#save-indicator .text').textContent;
+        const text = document.querySelector(
+          '#save-indicator .text'
+        ).textContent;
         expect(text).toMatch(/Could not save/);
         expect(text).toContain('QUOTA_BYTES exceeded');
       });
@@ -197,7 +290,10 @@ describe('options page', () => {
 
   describe('reset', () => {
     beforeEach(async () => {
-      await loadPage({ preferredProvider: 'openai', apiKeys: { openai: 'sk-stored' } });
+      await loadPage({
+        preferredProvider: 'openai',
+        apiKeys: { openai: 'sk-stored' },
+      });
       chrome.storage.sync.set.mockClear();
     });
 
@@ -216,7 +312,9 @@ describe('options page', () => {
 
       document.getElementById('reset-settings').click();
 
-      await vi.waitFor(() => expect(chrome.storage.sync.set).toHaveBeenCalled());
+      await vi.waitFor(() =>
+        expect(chrome.storage.sync.set).toHaveBeenCalled()
+      );
       expect(lastSaved().apiKeys).toEqual({});
       expect(lastSaved().preferredProvider).toBe('anthropic');
     });
@@ -228,13 +326,21 @@ describe('options page', () => {
 
       const [providers, privacy] = document.querySelectorAll('.nav-item');
       providers.click();
-      expect(document.getElementById('ai-providers-section').classList.contains('active'))
-        .toBe(true);
+      expect(
+        document
+          .getElementById('ai-providers-section')
+          .classList.contains('active')
+      ).toBe(true);
 
       privacy.click();
-      expect(document.getElementById('privacy-section').classList.contains('active')).toBe(true);
-      expect(document.getElementById('ai-providers-section').classList.contains('active'))
-        .toBe(false);
+      expect(
+        document.getElementById('privacy-section').classList.contains('active')
+      ).toBe(true);
+      expect(
+        document
+          .getElementById('ai-providers-section')
+          .classList.contains('active')
+      ).toBe(false);
     });
   });
 });

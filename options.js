@@ -35,6 +35,8 @@ class OptionsPage {
 
     setValue('summary-type-pref', this.settings.summaryType);
     setValue('summary-length-pref', this.settings.summaryLength);
+    setValue('target-language-pref', this.settings.targetLanguage);
+    setValue('source-language-pref', this.settings.sourceLanguage);
 
     for (const [name, enabled] of Object.entries(this.settings.features)) {
       setChecked(name, Boolean(enabled));
@@ -50,13 +52,52 @@ class OptionsPage {
       button.addEventListener('click', event => this.switchSection(event));
     });
 
-    document.getElementById('reset-settings')
+    document
+      .getElementById('reset-settings')
       ?.addEventListener('click', () => this.resetSettings());
+    document.querySelectorAll('[data-test-provider]').forEach(button => {
+      button.addEventListener('click', () =>
+        this.testConnection(/** @type {HTMLButtonElement} */ (button))
+      );
+    });
+  }
+
+  /** @param {HTMLButtonElement} button */
+  async testConnection(button) {
+    const provider = button.dataset.testProvider || '';
+    const status = document.getElementById(`${provider}-test-status`);
+    if (!status || button.disabled) return;
+    button.toggleAttribute('disabled', true);
+    status.textContent = 'Testing with one small request…';
+    try {
+      const response = await chrome.runtime.sendMessage({
+        actionType: 'TEST_PROVIDER_CONNECTION',
+        payload: {
+          provider,
+          apiKey:
+            /** @type {HTMLInputElement | null} */ (
+              document.getElementById(`${provider}-key`)
+            )?.value.trim() || '',
+          model:
+            /** @type {HTMLInputElement | null} */ (
+              document.getElementById(`${provider}-model`)
+            )?.value.trim() || '',
+        },
+      });
+      if (!response.success) throw new Error(response.error);
+      status.textContent = `Connected · ${response.data.model}. Model access can change.`;
+    } catch (error) {
+      status.textContent = `Test failed: ${/** @type {Error} */ (error).message}`;
+    } finally {
+      button.removeAttribute('disabled');
+    }
   }
 
   /** @param {Event} event */
   async handleChange(event) {
-    const target = /** @type {HTMLInputElement | HTMLSelectElement} */ (event.target);
+    const target = /** @type {HTMLInputElement | HTMLSelectElement} */ (
+      event.target
+    );
     const { id, name } = target;
     /** @type {any} */
     let update = null;
@@ -71,8 +112,14 @@ class OptionsPage {
       update = { summaryType: target.value };
     } else if (id === 'summary-length-pref') {
       update = { summaryLength: target.value };
+    } else if (id === 'target-language-pref') {
+      update = { targetLanguage: target.value };
+    } else if (id === 'source-language-pref') {
+      update = { sourceLanguage: target.value };
     } else if (target.type === 'checkbox') {
-      update = { features: { [id]: /** @type {HTMLInputElement} */ (target).checked } };
+      update = {
+        features: { [id]: /** @type {HTMLInputElement} */ (target).checked },
+      };
     }
 
     if (!update) return;
@@ -89,7 +136,9 @@ class OptionsPage {
 
   async resetSettings() {
     if (!confirm('Reset all settings, including saved API keys?')) return;
-    await this.configManager.setUserPreferences(this.configManager.defaultSettings);
+    await this.configManager.setUserPreferences(
+      this.configManager.defaultSettings
+    );
     this.settings = await this.configManager.getUserPreferences();
     this.render();
     this.showSaveIndicator('Settings reset to defaults');
@@ -100,7 +149,8 @@ class OptionsPage {
     const target = /** @type {HTMLElement} */ (event.currentTarget);
     const sectionId = target.dataset.section;
 
-    document.querySelectorAll('.nav-item.active, .settings-section.active')
+    document
+      .querySelectorAll('.nav-item.active, .settings-section.active')
       .forEach(el => el.classList.remove('active'));
 
     target.classList.add('active');
@@ -120,14 +170,20 @@ class OptionsPage {
 
 /** @param {string} id @param {string} value */
 function setValue(id, value) {
-  const el = /** @type {HTMLInputElement | HTMLSelectElement | null} */ (document.getElementById(id));
+  const el = /** @type {HTMLInputElement | HTMLSelectElement | null} */ (
+    document.getElementById(id)
+  );
   if (el) el.value = value;
 }
 
 /** @param {string} id @param {boolean} checked */
 function setChecked(id, checked) {
-  const el = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
+  const el = /** @type {HTMLInputElement | null} */ (
+    document.getElementById(id)
+  );
   if (el) el.checked = checked;
 }
 
-document.addEventListener('DOMContentLoaded', () => new OptionsPage());
+document.addEventListener('DOMContentLoaded', () => new OptionsPage(), {
+  once: true,
+});
