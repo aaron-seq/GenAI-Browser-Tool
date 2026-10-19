@@ -30,12 +30,13 @@ export class ConfigurationManager {
       summaryType: 'key-points',
       theme: 'auto',
       targetLanguage: 'en',
+      sourceLanguage: 'auto',
       /** @type {Record<string, boolean>} */
       features: {
         contextMenus: true,
         notifications: true,
-        saveHistory: true
-      }
+        saveHistory: true,
+      },
     };
   }
 
@@ -80,7 +81,10 @@ export class ConfigurationManager {
       ...stored,
       apiKeys: { ...this.defaultSettings.apiKeys, ...(stored.apiKeys || {}) },
       models: { ...this.defaultSettings.models, ...(stored.models || {}) },
-      features: { ...this.defaultSettings.features, ...(stored.features || {}) }
+      features: {
+        ...this.defaultSettings.features,
+        ...(stored.features || {}),
+      },
     };
   }
 
@@ -96,7 +100,7 @@ export class ConfigurationManager {
       apiKeys: { ...current.apiKeys, ...(newSettings.apiKeys || {}) },
       models: { ...current.models, ...(newSettings.models || {}) },
       features: { ...current.features, ...(newSettings.features || {}) },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
     await chrome.storage.sync.set({ [STORAGE_KEY]: updated });
     return updated;
@@ -118,11 +122,13 @@ export class ConfigurationManager {
    */
   async createAIClient() {
     const settings = await this.getUserPreferences();
-    const provider = PROVIDERS[settings.preferredProvider] ? settings.preferredProvider : 'anthropic';
+    const provider = Object.hasOwn(PROVIDERS, settings.preferredProvider)
+      ? settings.preferredProvider
+      : 'anthropic';
     return new AIClient({
       provider,
       apiKey: settings.apiKeys[provider],
-      model: settings.models[provider]
+      model: settings.models[provider],
     });
   }
 
@@ -141,7 +147,7 @@ export class ConfigurationManager {
     return {
       provider: settings.preferredProvider,
       configured: Boolean(settings.apiKeys[settings.preferredProvider]),
-      providers
+      providers,
     };
   }
 }

@@ -11,47 +11,64 @@
  */
 
 import { vi, afterEach } from 'vitest';
+import { webcrypto } from 'node:crypto';
+import { TextEncoder } from 'node:util';
+
+Object.defineProperty(globalThis, 'crypto', {
+  configurable: true,
+  value: webcrypto,
+});
+globalThis.TextEncoder = TextEncoder;
 
 /** @type {any} */
 const mockChrome = {
   runtime: {
-    onMessage: { addListener: vi.fn(), removeListener: vi.fn(), hasListener: vi.fn() },
+    onMessage: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      hasListener: vi.fn(),
+    },
     onInstalled: { addListener: vi.fn() },
     sendMessage: vi.fn(),
     getURL: vi.fn(path => `chrome-extension://mock-extension-id/${path}`),
     openOptionsPage: vi.fn(),
-    id: 'mock-extension-id'
+    id: 'mock-extension-id',
   },
   storage: {
     local: {
       get: vi.fn().mockResolvedValue({}),
       set: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
-      clear: vi.fn().mockResolvedValue(undefined)
+      clear: vi.fn().mockResolvedValue(undefined),
     },
     sync: {
       get: vi.fn().mockResolvedValue({}),
       set: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
-      clear: vi.fn().mockResolvedValue(undefined)
-    }
+      clear: vi.fn().mockResolvedValue(undefined),
+    },
   },
   tabs: {
     query: vi.fn().mockResolvedValue([]),
     get: vi.fn().mockResolvedValue({}),
+    create: vi.fn().mockResolvedValue({}),
     sendMessage: vi.fn(),
     onUpdated: { addListener: vi.fn() },
-    onActivated: { addListener: vi.fn() }
+    onActivated: { addListener: vi.fn() },
   },
   contextMenus: {
     create: vi.fn(),
     removeAll: vi.fn().mockResolvedValue(undefined),
-    onClicked: { addListener: vi.fn() }
+    onClicked: { addListener: vi.fn() },
   },
   commands: { onCommand: { addListener: vi.fn() } },
   notifications: { create: vi.fn(), clear: vi.fn() },
-  alarms: { create: vi.fn(), clear: vi.fn(), onAlarm: { addListener: vi.fn() } },
-  scripting: { executeScript: vi.fn().mockResolvedValue([{ result: {} }]) }
+  alarms: {
+    create: vi.fn(),
+    clear: vi.fn(),
+    onAlarm: { addListener: vi.fn() },
+  },
+  scripting: { executeScript: vi.fn().mockResolvedValue([{ result: {} }]) },
 };
 
 globalThis.chrome = mockChrome;
@@ -61,7 +78,7 @@ globalThis.fetch = vi.fn();
 globalThis.confirm = vi.fn(() => true);
 Object.defineProperty(globalThis.navigator, 'clipboard', {
   configurable: true,
-  value: { writeText: vi.fn().mockResolvedValue(undefined) }
+  value: { writeText: vi.fn().mockResolvedValue(undefined) },
 });
 
 afterEach(() => {

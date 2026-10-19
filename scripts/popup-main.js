@@ -7,6 +7,8 @@
  * had seven handlers that only displayed "Saved"/"Exported" and did nothing.
  */
 
+import { MAX_DOCUMENT_CHARS, validateDocument } from '../core/document.js';
+
 class PopupInterface {
   constructor() {
     /** @type {any} */
@@ -19,6 +21,11 @@ class PopupInterface {
     /** @type {any} */
     this.preferences = null;
     this.warnedAboutChatTruncation = false;
+    /** @type {number | null} */
+    this.sourceTabId = null;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('workspace') === '1')
+      document.body.classList.add('workspace');
 
     this.initialize();
   }
@@ -29,6 +36,10 @@ class PopupInterface {
       await this.applyPreferences();
       await this.updateProviderStatus();
       await this.extractCurrentPageContent();
+    } catch (error) {
+      const err = /** @type {Error} */ (error);
+      this.setPageInfo('Could not read this document', err.message);
+      this.showToast(err.message, 'error');
     } finally {
       this.hideLoading();
     }
@@ -47,6 +58,7 @@ class PopupInterface {
     this.preferences = response.data;
     setValue('summary-type', this.preferences.summaryType);
     setValue('target-language', this.preferences.targetLanguage);
+    setValue('source-language', this.preferences.sourceLanguage || 'auto');
 
     const length = /** @type {HTMLInputElement | null} */ (
       document.querySelector(
@@ -55,29 +67,41 @@ class PopupInterface {
     );
     if (length) length.checked = true;
 
-    if (this.preferences.theme === 'dark') {
-      document.body.classList.add('dark-theme');
-    }
+    const dark =
+      this.preferences.theme === 'dark' ||
+      (this.preferences.theme === 'auto' &&
+        Boolean(window.matchMedia?.('(prefers-color-scheme: dark)').matches));
+    document.body.classList.toggle('dark-theme', dark);
+    document.body.dataset.theme = dark ? 'dark' : 'light';
   }
 
   async toggleTheme() {
     const isDark = document.body.classList.toggle('dark-theme');
-    await this.send('UPDATE_USER_PREFERENCES', { theme: isDark ? 'dark' : 'light' });
+    document.body.dataset.theme = isDark ? 'dark' : 'light';
+    await this.send('UPDATE_USER_PREFERENCES', {
+      theme: isDark ? 'dark' : 'light',
+    });
   }
 
   setupEventListeners() {
     document.querySelectorAll('.tab-button').forEach(button => {
       button.addEventListener('click', event => {
-        const tab = /** @type {HTMLElement} */ (event.currentTarget).dataset.tab;
+        const tab = /** @type {HTMLElement} */ (event.currentTarget).dataset
+          .tab;
         if (tab) this.switchToTab(tab);
       });
     });
 
     on('settings-btn', 'click', () => chrome.runtime.openOptionsPage());
     on('theme-toggle', 'click', () => this.toggleTheme());
+    on('open-workspace-btn', 'click', () => this.openWorkspace());
+    on('document-file', 'change', event => this.importDocument(event));
+    on('clear-chat-btn', 'click', () => this.clearChat());
 
     on('generate-summary-btn', 'click', () => this.generateSummary());
-    on('copy-summary-btn', 'click', () => this.copyToClipboard('summary-content'));
+    on('copy-summary-btn', 'click', () =>
+      this.copyToClipboard('summary-content')
+    );
     on('export-summary-btn', 'click', () => this.exportSummary());
 
     on('send-chat-btn', 'click', () => this.sendChatMessage());
@@ -90,18 +114,26 @@ class PopupInterface {
     });
     document.querySelectorAll('.suggestion-chip').forEach(chip => {
       chip.addEventListener('click', event => {
-        setValue('chat-input', /** @type {HTMLElement} */ (event.target).textContent || '');
+        setValue(
+          'chat-input',
+          /** @type {HTMLElement} */ (event.target).textContent || ''
+        );
         this.sendChatMessage();
       });
     });
 
     on('translate-btn', 'click', () => this.translateContent());
     on('swap-languages', 'click', () => this.swapLanguages());
-    on('copy-translation-btn', 'click', () => this.copyToClipboard('translation-content'));
+    on('source-language', 'change', () => this.persistLanguages());
+    on('target-language', 'change', () => this.persistLanguages());
+    on('copy-translation-btn', 'click', () =>
+      this.copyToClipboard('translation-content')
+    );
 
     document.querySelectorAll('.analyze-btn').forEach(button => {
       button.addEventListener('click', event => {
-        const type = /** @type {HTMLElement} */ (event.currentTarget).dataset.type;
+        const type = /** @type {HTMLElement} */ (event.currentTarget).dataset
+          .type;
         if (type) this.runAnalysis(type);
       });
     });
@@ -114,9 +146,12 @@ class PopupInterface {
 
   /** @param {string} tabName */
   switchToTab(tabName) {
-    document.querySelectorAll('.tab-button.active, .tab-pane.active')
+    document
+      .querySelectorAll('.tab-button.active, .tab-pane.active')
       .forEach(el => el.classList.remove('active'));
-    document.querySelector(`.tab-button[data-tab="${tabName}"]`)?.classList.add('active');
+    document
+      .querySelector(`.tab-button[data-tab="${tabName}"]`)
+      ?.classList.add('active');
     document.getElementById(`${tabName}-tab`)?.classList.add('active');
     if (tabName === 'chat') document.getElementById('chat-input')?.focus();
   }
@@ -124,24 +159,150 @@ class PopupInterface {
   // ------------------------------------------------------------------ content
 
   async extractCurrentPageContent() {
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const requestedTab = Number(
+      new URLSearchParams(window.location.search).get('tabId')
+    );
+    const activeTab =
+      Number.isSafeInteger(requestedTab) && requestedTab > 0
+        ? await chrome.tabs.get(requestedTab)
+        : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
 
-    if (!activeTab?.url?.startsWith('http')) {
-      this.setPageInfo('This page cannot be read', 'Extensions cannot access browser or store pages');
+    if (!activeTab?.id || (activeTab.url && !/^https?:/.test(activeTab.url))) {
+      this.setPageInfo(
+        'This page cannot be read',
+        'Extensions cannot access browser or store pages'
+      );
       return;
     }
 
     this.setPageInfo(activeTab.title || 'Untitled', 'Reading page…');
+    this.sourceTabId = activeTab.id ?? null;
 
-    const response = await this.send('EXTRACT_PAGE_CONTENT', { tabId: activeTab.id });
+    const response = await this.send('EXTRACT_PAGE_CONTENT', {
+      tabId: activeTab.id,
+    });
     if (!response.success) {
       this.setPageInfo(activeTab.title || 'Untitled', response.error);
       return;
     }
 
-    this.pageContent = response.data;
-    const words = countWords(this.pageContent.mainText);
-    this.setPageInfo(this.pageContent.title, `${words.toLocaleString()} words`);
+    await this.acceptDocument(response.data);
+  }
+
+  /** @param {any} content */
+  async acceptDocument(content) {
+    validateDocument(content.mainText);
+    this.pageContent = content;
+    this.conversationHistory = [];
+    this.lastSummary = null;
+    this.lastTranslation = null;
+    this.warnedAboutChatTruncation = false;
+    if (content.url?.startsWith('local-document:')) this.sourceTabId = null;
+    hide('summary-results');
+    hide('translation-results');
+    hide('tools-results');
+    document.querySelectorAll('.analysis-result').forEach(result => {
+      result.textContent = 'Run this analysis for this document.';
+    });
+    setHtml('chat-history', '');
+    const words = countWords(content.mainText);
+    this.setPageInfo(
+      content.title,
+      `${words.toLocaleString()} words · ~${Math.max(1, Math.round(words / 200))} min read · Ready`
+    );
+    const headings = (content.headings || [])
+      .slice(0, 6)
+      .map(/** @param {any} h */ h => h.text);
+    setText(
+      'page-overview',
+      headings.length
+        ? `In this document: ${headings.join(' · ')}`
+        : 'Ready to summarize, ask questions, or turn this document into study notes.'
+    );
+    setText('chat-memory-status', 'Loading saved conversation…');
+    const response = await this.send('GET_DOCUMENT_HISTORY', {
+      url: content.url,
+      content: content.mainText,
+    });
+    if (this.pageContent !== content) return;
+    const conversations = response.success
+      ? response.data.conversations || []
+      : [];
+    for (const exchange of conversations) {
+      this.addChatMessage('user', exchange.question);
+      this.addChatMessage('assistant', exchange.answer);
+      this.addChatSources(exchange.sources || []);
+      this.conversationHistory.push(
+        { role: 'user', content: exchange.question },
+        { role: 'assistant', content: exchange.answer }
+      );
+    }
+    if (response.success && response.data.summaries?.[0])
+      this.renderSummary(response.data.summaries[0], true);
+    setText(
+      'chat-memory-status',
+      !response.success
+        ? 'Saved conversation unavailable'
+        : response.data.memoryEnabled === false
+          ? 'Chat memory is off in Settings'
+          : conversations.length
+            ? `Restored ${conversations.length} exchanges for this document`
+            : 'Chats are remembered for this document'
+    );
+  }
+
+  openWorkspace() {
+    const query = this.sourceTabId ? `&tabId=${this.sourceTabId}` : '';
+    chrome.tabs.create({
+      url: chrome.runtime.getURL(`popup.html?workspace=1${query}`),
+    });
+  }
+
+  /** @param {Event} event */
+  async importDocument(event) {
+    if (this.isProcessing) return;
+    const input = /** @type {HTMLInputElement} */ (event.target);
+    const file = input.files?.[0];
+    if (!file) return;
+    await this.withLoading('Reading your document locally…', async () => {
+      if (!/\.(txt|md|markdown)$/i.test(file.name))
+        throw new Error(
+          'Choose a plain-text or Markdown file. PDF and EPUB import is not available yet.'
+        );
+      if (file.size > MAX_DOCUMENT_CHARS * 4)
+        throw new Error('File is too large. Import a smaller part.');
+      const text = await file.text();
+      await this.acceptDocument({
+        title: file.name,
+        url: `local-document:${encodeURIComponent(file.name)}`,
+        mainText: text,
+        headings: [],
+        language: 'unknown',
+      });
+      input.value = '';
+    });
+  }
+
+  async clearChat() {
+    if (!this.requireContent() || this.isProcessing) return;
+    await this.withLoading('Clearing this document’s chat…', async () => {
+      const response = await this.send('CLEAR_DOCUMENT_CHAT', {
+        url: this.pageContent.url,
+        content: this.pageContent.mainText,
+      });
+      if (!response.success) throw new Error(response.error);
+      this.conversationHistory = [];
+      setHtml('chat-history', '');
+      setText('chat-memory-status', 'Chat cleared for this document');
+    });
+  }
+
+  async persistLanguages() {
+    const response = await this.send('UPDATE_USER_PREFERENCES', {
+      targetLanguage: value('target-language'),
+      sourceLanguage: value('source-language'),
+    });
+    if (!response.success) this.showToast(response.error, 'error');
   }
 
   // -------------------------------------------------------------------- tasks
@@ -152,21 +313,36 @@ class PopupInterface {
     await this.withLoading('Generating summary…', async () => {
       const response = await this.send('GENERATE_CONTENT_SUMMARY', {
         content: this.pageContent.mainText,
+        url: this.pageContent.url,
+        title: this.pageContent.title,
         summaryType: value('summary-type') || 'key-points',
-        targetLength: checkedValue('summary-length') || 'medium'
+        targetLength: checkedValue('summary-length') || 'medium',
       });
 
       if (!response.success) throw new Error(response.error);
 
-      this.lastSummary = response.data;
-      setHtml('summary-content', renderMarkdown(response.data.summary));
-      setText('summary-provider', `${response.data.provider} · ${response.data.model}`);
-      setText('summary-confidence', describeCoverage(response.data));
-      show('summary-results');
+      this.renderSummary(response.data, Boolean(response.data.cached));
     });
   }
 
+  /** @param {any} data @param {boolean} cached */
+  renderSummary(data, cached) {
+    this.lastSummary = data;
+    setHtml('summary-content', renderMarkdown(data.summary));
+    setText('summary-provider', `${data.provider} · ${data.model}`);
+    setText(
+      'summary-confidence',
+      `${cached ? 'Saved summary · ' : ''}${describeCoverage(data)}`
+    );
+    show('summary-results');
+    if (data.historyWarning) {
+      setText('summary-confidence', `${describeCoverage(data)} · Not saved`);
+      this.showToast(data.historyWarning, 'warning');
+    }
+  }
+
   async sendChatMessage() {
+    if (this.isProcessing) return;
     const question = value('chat-input').trim();
     if (!question || !this.requireContent()) return;
 
@@ -177,7 +353,9 @@ class PopupInterface {
       const response = await this.send('ANSWER_CONTEXTUAL_QUESTION', {
         question,
         context: this.pageContent.mainText,
-        conversationHistory: this.conversationHistory.slice(-6)
+        url: this.pageContent.url,
+        title: this.pageContent.title,
+        conversationHistory: this.conversationHistory.slice(-6),
       });
 
       if (!response.success) {
@@ -186,9 +364,14 @@ class PopupInterface {
       }
 
       this.addChatMessage('assistant', response.data.answer);
+      this.addChatSources(response.data.sources || [], response.data.retrieval);
+      if (response.data.historyWarning) {
+        setText('chat-memory-status', response.data.historyWarning);
+        this.showToast(response.data.historyWarning, 'warning');
+      }
 
-      // Chat sends a single request, so a long page is answered from its first
-      // section only. Saying so once beats letting the answer look exhaustive.
+      // Compatibility with an older worker response while an extension reloads.
+      // Current retrieval responses report passage coverage through sources.
       if (response.data.truncated && !this.warnedAboutChatTruncation) {
         this.warnedAboutChatTruncation = true;
         this.addChatMessage(
@@ -214,15 +397,21 @@ class PopupInterface {
           ? this.pageContent.mainText
           : this.pageContent.mainText.slice(0, 2000),
         targetLanguage: value('target-language') || 'en',
-        sourceLanguage: value('source-language') || 'auto'
+        sourceLanguage: value('source-language') || 'auto',
       });
 
       if (!response.success) throw new Error(response.error);
 
       this.lastTranslation = response.data;
       setHtml('translation-content', renderMarkdown(response.data.text));
-      setText('detected-language', `${response.data.provider} · ${response.data.model}`);
-      setText('translation-confidence', response.data.truncated ? 'Truncated' : '');
+      setText(
+        'detected-language',
+        `${response.data.provider} · ${response.data.model}`
+      );
+      setText(
+        'translation-confidence',
+        response.data.truncated ? 'Truncated' : ''
+      );
       show('translation-results');
     });
   }
@@ -238,7 +427,8 @@ class PopupInterface {
       if (type === 'readability') {
         // Computed locally — no reason to spend an API call on arithmetic.
         const { score, level } = readabilityScore(this.pageContent.mainText);
-        if (target) target.textContent = `Flesch reading ease ${score} — ${level}`;
+        if (target)
+          target.textContent = `Flesch reading ease ${score} — ${level}`;
         return;
       }
 
@@ -247,12 +437,14 @@ class PopupInterface {
         sentiment: 'ANALYZE_SENTIMENT',
         tags: 'GENERATE_SMART_TAGS',
         insights: 'EXTRACT_KEY_INSIGHTS',
-        entities: 'EXTRACT_ENTITIES'
+        entities: 'EXTRACT_ENTITIES',
       };
       const action = actions[type];
       if (!action) throw new Error(`No analysis available for "${type}"`);
 
-      const response = await this.send(action, { text: this.pageContent.mainText });
+      const response = await this.send(action, {
+        text: this.pageContent.mainText,
+      });
       if (!response.success) throw new Error(response.error);
 
       if (!target) return;
@@ -262,6 +454,13 @@ class PopupInterface {
         target.textContent = response.data.tags.join(', ');
       } else {
         target.innerHTML = renderMarkdown(response.data.text);
+      }
+      if (response.data.truncated) {
+        const notice = document.createElement('p');
+        notice.className = 'coverage-note';
+        notice.textContent =
+          'Partial analysis: uses only the first 24,000 characters of this document.';
+        target.appendChild(notice);
       }
     } catch (error) {
       /** @type {any} */
@@ -286,17 +485,27 @@ class PopupInterface {
   }
 
   async extractPageLinks() {
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!activeTab?.id) return;
+    if (!this.sourceTabId) {
+      this.showToolsResult(
+        '<p>Links are available for a source web page. Imported text has no live page links.</p>'
+      );
+      return;
+    }
 
     try {
-      const response = await chrome.tabs.sendMessage(activeTab.id, { action: 'extractLinks' });
-      if (!response?.success) throw new Error(response?.error || 'Could not read links');
+      const response = await chrome.tabs.sendMessage(this.sourceTabId, {
+        action: 'extractLinks',
+      });
+      if (!response?.success)
+        throw new Error(response?.error || 'Could not read links');
 
       const links = response.data.slice(0, 100);
       this.showToolsResult(
         `<p>${links.length} link(s)</p><ul>${links
-          .map(/** @param {any} l */ l => `<li>${escapeHtml(l.text || l.href)}<br><small>${escapeHtml(l.href)}</small></li>`)
+          .map(
+            /** @param {any} l */ l =>
+              `<li>${escapeHtml(l.text || l.href)}<br><small>${escapeHtml(l.href)}</small></li>`
+          )
           .join('')}</ul>`
       );
     } catch (error) {
@@ -322,7 +531,11 @@ class PopupInterface {
       return;
     }
     downloadJson(
-      { ...this.lastSummary, url: this.pageContent?.url, title: this.pageContent?.title },
+      {
+        ...this.lastSummary,
+        url: this.pageContent?.url,
+        title: this.pageContent?.title,
+      },
       `summary-${Date.now()}.json`
     );
   }
@@ -339,12 +552,15 @@ class PopupInterface {
       return await chrome.runtime.sendMessage({
         actionType,
         requestId: `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        payload
+        payload,
       });
     } catch (error) {
       /** @type {any} */
       const err = error;
-      return { success: false, error: `Extension service unavailable: ${err.message}` };
+      return {
+        success: false,
+        error: `Extension service unavailable: ${err.message}`,
+      };
     }
   }
 
@@ -357,10 +573,16 @@ class PopupInterface {
     }
 
     const { provider, configured } = response.data;
-    setText('provider-name', configured ? provider : `${provider} — no API key`);
+    setText(
+      'provider-name',
+      configured ? provider : `${provider} — no API key`
+    );
     badge?.classList.toggle('active', configured);
     if (!configured) {
-      this.showToast('Add an API key in Settings to enable AI features', 'error');
+      this.showToast(
+        'Add an API key in Settings to enable AI features',
+        'error'
+      );
     }
   }
 
@@ -412,18 +634,43 @@ class PopupInterface {
     history.scrollTop = history.scrollHeight;
   }
 
+  /** @param {any[]} sources @param {any} [retrieval] */
+  addChatSources(sources, retrieval) {
+    if (!Array.isArray(sources) || !sources.length) return;
+    const details = document.createElement('details');
+    details.className = 'chat-sources';
+    const summary = document.createElement('summary');
+    summary.textContent = retrieval
+      ? `${sources.length} of ${retrieval.total} passages used · ${retrieval.mode === 'overview' ? 'representative overview' : 'matched to your question'}`
+      : `${sources.length} source excerpts`;
+    details.appendChild(summary);
+    for (const source of sources) {
+      if (!source || typeof source.text !== 'string') continue;
+      const excerpt = document.createElement('p');
+      excerpt.textContent = `[${source.id}] ${source.excerpt || source.text}`;
+      details.appendChild(excerpt);
+    }
+    document.getElementById('chat-history')?.appendChild(details);
+  }
+
   swapLanguages() {
-    const source = /** @type {HTMLSelectElement | null} */ (document.getElementById('source-language'));
-    const target = /** @type {HTMLSelectElement | null} */ (document.getElementById('target-language'));
+    const source = /** @type {HTMLSelectElement | null} */ (
+      document.getElementById('source-language')
+    );
+    const target = /** @type {HTMLSelectElement | null} */ (
+      document.getElementById('target-language')
+    );
     if (!source || !target || source.value === 'auto') return;
     [source.value, target.value] = [target.value, source.value];
+    this.persistLanguages();
   }
 
   /** @param {string} elementId */
   copyToClipboard(elementId) {
     const el = document.getElementById(elementId);
     if (!el) return;
-    navigator.clipboard.writeText(el.innerText)
+    navigator.clipboard
+      .writeText(el.innerText)
       .then(() => this.showToast('Copied to clipboard'))
       .catch(() => this.showToast('Could not copy', 'error'));
   }
@@ -437,16 +684,17 @@ class PopupInterface {
   /** @param {string} title @param {string} status */
   setPageInfo(title, status) {
     setText('current-page-title', title);
+    setText('current-page-status', status);
     const info = document.getElementById('page-info');
     if (info) info.title = status;
   }
 
-  /** @param {string} message @param {'info'|'error'|'success'} [type] */
+  /** @param {string} message @param {'info'|'error'|'success'|'warning'} [type] */
   showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     if (!container) return;
     const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
+    toast.className = `toast ${type}`;
     toast.textContent = message;
     container.appendChild(toast);
     setTimeout(() => toast.remove(), 5000);
@@ -472,13 +720,17 @@ function on(id, event, handler) {
 
 /** @param {string} id @returns {string} */
 function value(id) {
-  const el = /** @type {HTMLInputElement | HTMLSelectElement | null} */ (document.getElementById(id));
+  const el = /** @type {HTMLInputElement | HTMLSelectElement | null} */ (
+    document.getElementById(id)
+  );
   return el ? el.value : '';
 }
 
 /** @param {string} id @param {string} v */
 function setValue(id, v) {
-  const el = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
+  const el = /** @type {HTMLInputElement | null} */ (
+    document.getElementById(id)
+  );
   if (el) el.value = v;
 }
 
@@ -492,7 +744,9 @@ function checkedValue(name) {
 
 /** @param {string} id @returns {boolean} */
 function isChecked(id) {
-  const el = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
+  const el = /** @type {HTMLInputElement | null} */ (
+    document.getElementById(id)
+  );
   return Boolean(el?.checked);
 }
 
@@ -560,8 +814,10 @@ export function describeCoverage(data) {
   const dropped = data.droppedChars || 0;
 
   if (dropped > 0) {
-    return `Very long page — summarized the first ${sections} sections, ` +
-      `${dropped.toLocaleString()} characters not included`;
+    return (
+      `Very long page — summarized the first ${sections} sections, ` +
+      `${dropped.toLocaleString()} characters not included`
+    );
   }
   if (sections > 1) {
     return `Whole page, summarized across ${sections} sections`;
@@ -571,7 +827,9 @@ export function describeCoverage(data) {
 
 /** @param {string} text @returns {number} */
 export function countWords(text) {
-  const words = String(text || '').trim().match(/\S+/g);
+  const words = String(text || '')
+    .trim()
+    .match(/\S+/g);
   return words ? words.length : 0;
 }
 
@@ -584,17 +842,27 @@ export function countWords(text) {
 export function readabilityScore(text) {
   const sentences = (text.match(/[.!?]+(\s|$)/g) || []).length || 1;
   const words = countWords(text) || 1;
-  const syllables = (text.toLowerCase().match(/[aeiouy]{1,2}/g) || []).length || words;
+  const syllables =
+    (text.toLowerCase().match(/[aeiouy]{1,2}/g) || []).length || words;
 
   const score = Math.max(
     0,
-    Math.min(100, Math.round(206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words)))
+    Math.min(
+      100,
+      Math.round(
+        206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words)
+      )
+    )
   );
 
-  const level = score >= 80 ? 'Easy'
-    : score >= 60 ? 'Fairly easy'
-      : score >= 40 ? 'Fairly difficult'
-        : 'Difficult';
+  const level =
+    score >= 80
+      ? 'Easy'
+      : score >= 60
+        ? 'Fairly easy'
+        : score >= 40
+          ? 'Fairly difficult'
+          : 'Difficult';
 
   return { score, level };
 }
@@ -611,4 +879,6 @@ function downloadJson(data, filename) {
   URL.revokeObjectURL(url);
 }
 
-document.addEventListener('DOMContentLoaded', () => new PopupInterface());
+document.addEventListener('DOMContentLoaded', () => new PopupInterface(), {
+  once: true,
+});

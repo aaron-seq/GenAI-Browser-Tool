@@ -16,19 +16,23 @@
 
 const KEYS = {
   summaries: 'genai_summary_history',
-  conversations: 'genai_conversation_history'
+  conversations: 'genai_conversation_history',
 };
 
 /** Entries kept per list. Oldest are dropped once the cap is passed. */
 const LIMITS = {
   summaries: 1000,
-  conversations: 500
+  conversations: 500,
 };
 
 /** History older than this is removed by the daily cleanup alarm. */
 const RETENTION_DAYS = 90;
 
 export class StorageService {
+  constructor() {
+    /** @type {Map<string, Promise<any>>} */
+    this.writes = new Map();
+  }
   /**
    * Save one generated summary.
    *
@@ -58,17 +62,45 @@ export class StorageService {
    * @returns {Promise<string>}
    */
   async prepend(key, limit, entry) {
-    const stored = await this.getStorageData(key, []);
-    // A corrupted value (a string, an object) must not throw here and lose the
-    // write; start a fresh list instead.
-    const list = Array.isArray(stored) ? stored : [];
+    return this.mutateList(key, list => {
+      const saved = { ...entry, id: crypto.randomUUID() };
+      list.unshift(saved);
+      list.splice(limit);
+      return { entries: list, result: saved.id };
+    });
+  }
 
-    const saved = { id: crypto.randomUUID(), ...entry };
-    list.unshift(saved);
-    list.splice(limit);
+  /** @param {string} identity */
+  async clearDocumentChat(identity) {
+    return this.mutateList(KEYS.conversations, list => {
+      const entries = list.filter(entry => entry.documentKey !== identity);
+      return { entries, result: list.length - entries.length };
+    });
+  }
 
-    await this.setStorageData(key, list);
-    return saved.id;
+  /**
+   * Serialize read-modify-write operations so two open readers cannot lose turns.
+   * The original rejected operation still reaches its caller; later writes can retry.
+   * @param {string} key
+   * @param {(entries: any[]) => {entries: any[], result: any, write?: boolean}} transform
+   * @returns {Promise<any>}
+   */
+  mutateList(key, transform) {
+    const work = async () => {
+      // A failed read is not an empty history: writing over it would lose data.
+      const values = await chrome.storage.local.get([key]);
+      const stored = values[key];
+      const before = Array.isArray(stored) ? stored : [];
+      const { entries, result, write = true } = transform(before);
+      if (write) await this.setStorageData(key, entries);
+      return result;
+    };
+    const operation = (this.writes.get(key) || Promise.resolve()).then(
+      work,
+      work
+    );
+    this.writes.set(key, operation);
+    return operation;
   }
 
   /**
@@ -79,10 +111,16 @@ export class StorageService {
   async getAnalysisHistory() {
     const [summaries, conversations] = await Promise.all([
       this.getStorageData(KEYS.summaries, []),
-      this.getStorageData(KEYS.conversations, [])
+      this.getStorageData(KEYS.conversations, []),
     ]);
 
-    return { summaries, conversations, totalItems: summaries.length + conversations.length };
+    const summaryList = Array.isArray(summaries) ? summaries : [];
+    const conversationList = Array.isArray(conversations) ? conversations : [];
+    return {
+      summaries: summaryList,
+      conversations: conversationList,
+      totalItems: summaryList.length + conversationList.length,
+    };
   }
 
   /**
@@ -100,15 +138,22 @@ export class StorageService {
     const isCurrent = item => !item?.timestamp || item.timestamp > cutoff;
 
     const removed = await Promise.all(
-      [KEYS.summaries, KEYS.conversations].map(async key => {
-        const before = await this.getStorageData(key, []);
-        const after = before.filter(isCurrent);
-        if (after.length !== before.length) await this.setStorageData(key, after);
-        return before.length - after.length;
-      })
+      [KEYS.summaries, KEYS.conversations].map(key =>
+        this.mutateList(key, before => {
+          const after = before.filter(isCurrent);
+          return {
+            entries: after,
+            result: before.length - after.length,
+            write: after.length !== before.length,
+          };
+        })
+      )
     );
 
-    return { summariesRemoved: removed[0] ?? 0, conversationsRemoved: removed[1] ?? 0 };
+    return {
+      summariesRemoved: removed[0] ?? 0,
+      conversationsRemoved: removed[1] ?? 0,
+    };
   }
 
   /**
