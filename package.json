@@ -1,6 +1,6 @@
 {
   "name": "genai-browser-tool",
-  "version": "5.2.0",
+  "version": "5.3.0",
   "description": "Chrome extension that summarizes, questions, translates, and analyses the current page using an AI provider and API key you supply.",
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
+    "benchmark:retrieval": "node .github/scripts/benchmark-retrieval.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,ts,json,css,html,md}\"",
@@ -57,7 +58,7 @@
     "vitest": "^4.1.11"
   },
   "comments": {
-    "dependencies": "The extension ships zero runtime dependencies: fetch, chrome.* APIs, and the DOM only. It also has no build step \u2014 the repository root is the loadable extension, so packaging is a zip of the root."
+    "dependencies": "The extension ships zero runtime dependencies: fetch, chrome.* APIs, and the DOM only. It also has no build step — the repository root is the loadable extension, so packaging is a zip of the root."
   },
   "lint-staged": {
     "*.js": [
@@ -69,9 +70,7 @@
     ]
   },
   "browserslist": [
-    "Chrome >= 88",
-    "Firefox >= 78",
-    "Edge >= 88"
+    "Chrome >= 116"
   ],
   "files": [
     "*.js",

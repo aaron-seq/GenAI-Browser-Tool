@@ -6,6 +6,7 @@ We actively support the following versions with security updates:
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 5.3.x   | :white_check_mark: |
 | 5.2.x   | :white_check_mark: |
 | 5.1.x   | :white_check_mark: |
 | < 5.1   | :x:                |
@@ -65,8 +66,10 @@ is limited to the three provider hosts declared in `host_permissions`.
   before any work is done. An `actionType` that is well formed but unrecognised
   is rejected by the router's `default` case, still before any work — the list
   of valid actions lives in exactly one place rather than being mirrored here.
-- **Content length cap**: page text is clipped to 24,000 characters
-  (`MAX_CONTENT_CHARS`) before being sent to a provider.
+- **Input limits**: page/text documents are limited to 2,000,000 characters.
+  Chat selects at most six passages of 2,800 characters. Translation and other
+  single-request analyses clip context to 24,000 characters. Summaries can send
+  up to eight sections of 24,000 characters, followed by a merge request.
 - **Question length cap**: 1,000 characters. This bounds token spend; it is not
   a security boundary.
 
@@ -79,7 +82,8 @@ is limited to the three provider hosts declared in `host_permissions`.
   questions such as "Is there only one=1 result?". A question is the user's own
   text, is never evaluated, and reaches the DOM only through `renderMarkdown`,
   which escapes; the filter added no protection and cost real functionality.
-- **Output escaping**: model output is escaped with `escapeHtml()` *before* the
+
+- **Output escaping**: model output is escaped with `escapeHtml()` _before_ the
   small markdown subset is applied, so no tag or attribute from page-derived
   text can reach the DOM as markup. Covered by tests in
   `tests/popup/rendering.test.js`.
@@ -123,8 +127,17 @@ browser profile is compromised.
 
 - Page text is sent to the provider you configured, and to nobody else. There is
   no backend and no analytics.
-- Summaries and completed chat exchanges are stored locally
-  (`chrome.storage.local`); a daily alarm prunes old entries.
+- With Save history enabled, summaries and completed chat exchanges, including
+  focused source excerpts, are stored in `chrome.storage.local`. A daily alarm
+  prunes entries older than 90 days; list caps are 1,000 summaries and 500 exchanges.
+- Document identity hashes URL and text; this is identification, not encryption.
+  New or changed documents do not inherit another document's thread. Older
+  unscoped history is retained for export, not restored into a page.
+- Full imported text and local BM25 indexes stay in memory and are not persisted.
+  A chosen text file is read locally; importing alone makes no provider request.
+- Save history off disables new saves, summary-cache reuse, and chat restoration.
+  It does not delete previous records. Clear this chat deletes that document's
+  saved exchanges, including when the worker receives the action with memory off.
 - Export writes a JSON file to your machine. Nothing is uploaded.
 - The content script only reads the DOM. It never modifies the page and has no
   network access of its own.
@@ -180,8 +193,9 @@ extension taking no actions on the user's behalf.
 **Risk**: page content, including anything sensitive on the page, is sent to the
 configured AI provider.
 **Mitigation**: the user chooses the provider and triggers each action
-explicitly; content is capped at 24,000 characters; nothing is sent
-automatically or in the background.
+explicitly; each task has the limits above. No AI request is sent merely by
+opening or importing a document. The optional connection test sends a small
+request with the entered key/model, without saving the key.
 **Residual risk**: inherent to the product. Do not run AI actions on pages with
 data you would not paste into that provider's console.
 
@@ -192,20 +206,12 @@ data you would not paste into that provider's console.
 There is no certificate pinning and no request signing — extensions cannot
 pin certificates, and providers do not offer request signing.
 
-## Compliance
+## Assurance limits
 
-### Privacy Regulations
-
-- **GDPR**: European privacy regulation compliance
-- **CCPA**: California privacy law compliance
-- **Data Minimization**: Collect only necessary data
-- **Right to Deletion**: Users can delete their data
-
-### Security Standards
-
-- **OWASP Top 10**: Address common vulnerabilities
-- **Chrome Web Store Policies**: Compliance with store requirements
-- **Security by Design**: Security considerations in all features
+No independent security audit, legal compliance assessment, or Chrome Web Store
+approval is evidenced by this repository. The controls and regression tests above
+describe implemented behavior; they are not certification claims. No optional
+semantic backend or model training service is deployed by this release.
 
 ## Incident Response
 
@@ -228,25 +234,29 @@ pin certificates, and providers do not offer request signing.
 
 ### Severity Classification
 
-**Critical**: 
+**Critical**:
+
 - Remote code execution
 - Arbitrary file access
 - API key theft
 - Complete system compromise
 
-**High**: 
+**High**:
+
 - Privilege escalation
 - Significant data exposure
 - Authentication bypass
 - Persistent XSS
 
-**Medium**: 
+**Medium**:
+
 - Limited data exposure
 - Reflected XSS
 - CSRF vulnerabilities
 - Information disclosure
 
-**Low**: 
+**Low**:
+
 - Minor information leakage
 - Configuration issues
 - Non-security functionality issues
@@ -283,4 +293,4 @@ For security-related questions or concerns:
 
 ---
 
-*This security policy is reviewed and updated quarterly. Last updated: November 2024*
+_This security policy is reviewed and updated quarterly. Last updated: November 2024_

@@ -1,5 +1,32 @@
 # Changelog
 
+## [5.3.0] - 2026-10-20
+
+### Added
+
+- Full-page learning workspace, document outline, and local text/Markdown import.
+- Local BM25 retrieval across documents up to 2,000,000 characters, with source
+  passages and coverage in chat. Study-guide and quiz question starters.
+- URL/content-scoped chat restoration and deletion, and reusable saved summaries
+  keyed by document, provider, model, style, and length.
+- Optional provider connection tests using entered credentials, with bounded
+  requests and visible authentication/network failures.
+- Dedicated product brief, preserved engineering instructions, primary-source
+  research, and a reproducible retrieval microbenchmark under `docs/product/`.
+
+### Fixed
+
+- Save-history preferences now control persistence, cache reuse, and restoration.
+- Concurrent local-history writes no longer overwrite each other's turns.
+- Source/target language choices persist; analysis reports clipped coverage.
+- Provider defaults now use Claude Haiku 5.5, GPT-6 Luna, and Gemini 3.5 Flash-Lite;
+  custom model overrides remain supported. No live provider quality benchmark is claimed.
+
+### Limits
+
+- PDF/EPUB/OCR and optional semantic backend remain tracked follow-ups. Retrieval
+  is lexical and bounded; translation/analysis retain their 24,000-character cap.
+
 All notable changes to the GenAI Browser Tool project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
