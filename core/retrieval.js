@@ -29,7 +29,9 @@ export class DocumentIndex {
     for (let start = 0; start < text.length;) {
       let end = Math.min(start + PASSAGE_CHARS, text.length);
       if (end < text.length) {
-        const boundary = text.lastIndexOf(' ', end);
+        // Bound the search to this passage. Scanning the whole prefix for every
+        // boundary makes long unbroken text quadratic in document length.
+        const boundary = start + text.slice(start, end + 1).lastIndexOf(' ');
         if (boundary > start + PASSAGE_CHARS / 2) end = boundary;
       }
       const passage = text.slice(start, end);

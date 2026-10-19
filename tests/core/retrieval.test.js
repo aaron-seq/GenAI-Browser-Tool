@@ -71,7 +71,7 @@ describe('local document retrieval', () => {
     expect(
       new DocumentIndex('A short page.').retrieve('topic').sources
     ).toHaveLength(1);
-    const longWord = 'x'.repeat(10000);
+    const longWord = 'x'.repeat(MAX_DOCUMENT_CHARS);
     const result = new DocumentIndex(longWord).retrieve('missing');
     expect(result.sources.at(-1).end).toBe(longWord.length);
     expect(result.context.length).toBeLessThan(24000);
