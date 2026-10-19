@@ -44,14 +44,28 @@ export const test = base.extend({
       headless: true,
       args: [
         `--disable-extensions-except=${extensionPath}`,
-        `--load-extension=${extensionPath}`
-      ]
+        `--load-extension=${extensionPath}`,
+      ],
     });
 
     // Serve the fixture page locally so no test touches the real network.
     await context.route(`${FIXTURE_URL}**`, route =>
-      route.fulfill({ status: 200, contentType: 'text/html', body: FIXTURE_HTML })
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: FIXTURE_HTML,
+      })
     );
+
+    // Let first-install onboarding finish before a test navigates extension
+    // pages. Otherwise openOptionsPage() can reuse and redirect that new tab.
+    await expect
+      .poll(
+        () =>
+          context.pages().some(page => page.url().endsWith('/options.html')),
+        { timeout: 15000 }
+      )
+      .toBe(true);
 
     await use(context);
 
@@ -66,7 +80,7 @@ export const test = base.extend({
 
     const id = worker.url().split('/')[2];
     await use(id);
-  }
+  },
 });
 
 /**
@@ -97,7 +111,10 @@ export async function seedPreferences(page, preferences) {
  */
 export async function activeTabId(extensionPage) {
   return extensionPage.evaluate(async () => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     return tab.id;
   });
 }
@@ -110,7 +127,7 @@ export const CONFIGURED_PREFERENCES = {
   summaryType: 'key-points',
   summaryLength: 'medium',
   targetLanguage: 'en',
-  features: { contextMenus: true, notifications: true, saveHistory: true }
+  features: { contextMenus: true, notifications: true, saveHistory: true },
 };
 
 export { expect };
