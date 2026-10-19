@@ -21,8 +21,8 @@ npm ci
 1. Open `chrome://extensions`, enable **Developer mode**, and choose **Load
    unpacked** → the repository root. No build step is needed.
 2. In options, select a provider and enter its API key. **Test connection** sends
-   one small request using the entered key and model. Save your settings;
-   connection testing is optional.
+   one small request using the entered key and model. Settings save automatically
+   when a field changes; connection testing is optional.
 3. Open an article and click the extension. Check the word count and page title,
    then generate a summary or ask a question.
 4. Choose **Open workspace** for a full-page reading area that stays open. You can
@@ -96,6 +96,10 @@ See [security and data handling](docs/SECURITY.md).
 An optional private semantic retrieval service is being researched in
 [#27](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/27). No backend, local
 model, or semantic embedding service is installed by this release.
+
+Known settings gap: the context-menu and desktop-notification toggles are saved
+but currently ignored by the worker. This is tracked in
+[#31](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/31).
 
 ## Troubleshooting
 
