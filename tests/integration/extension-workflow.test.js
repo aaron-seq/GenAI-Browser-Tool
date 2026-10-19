@@ -809,10 +809,30 @@ describe('Extension workflow', () => {
       ).toBe(false);
       const again = await dispatch('GENERATE_CONTENT_SUMMARY', page);
       expect(again.data.cached).toBe(true);
+      expect(again.data.text).toBe(again.data.summary);
       expect(global.fetch).toHaveBeenCalledTimes(1);
       const history = await dispatch('GET_DOCUMENT_HISTORY', page);
       expect(history.data.summaries).toHaveLength(1);
+      expect(history.data.summaries[0]).not.toHaveProperty('text');
     });
+
+    it.each(['GENERATE_CONTENT_SUMMARY', 'ANSWER_CONTEXTUAL_QUESTION'])(
+      'preserves a successful %s result when local storage is full',
+      async action => {
+        chrome.storage.local.set.mockRejectedValue(
+          new Error('QUOTA_BYTES quota exceeded')
+        );
+        const response = await dispatch(action, {
+          ...page,
+          context: page.content,
+          question: 'What is this about?',
+        });
+        expect(response.success).toBe(true);
+        expect(response.data.text).toBeTruthy();
+        expect(response.data.historyWarning).toContain('Could not save');
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+      }
+    );
 
     it('invalidates saved summaries when content or style changes', async () => {
       await dispatch('GENERATE_CONTENT_SUMMARY', page);

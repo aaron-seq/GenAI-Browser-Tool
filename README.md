@@ -91,6 +91,8 @@ options disables new saves, cache reuse, and thread restoration. It does not era
 existing records; clear a document's chat before disabling it if needed. Imported
 full documents and retrieval indexes are not persisted, but saved answers and
 source excerpts may contain sensitive text. JSON export includes saved material.
+If local storage fills, the generated result stays visible with a save warning;
+copy it before closing the tab.
 See [security and data handling](docs/SECURITY.md).
 
 An optional private semantic retrieval service is being researched in

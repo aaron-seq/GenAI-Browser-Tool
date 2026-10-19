@@ -100,6 +100,47 @@ describe('popup', () => {
   });
 
   describe('learning workspace', () => {
+    it('keeps a generated summary visible when it could not be saved', async () => {
+      await openPopup({
+        overrides: {
+          GENERATE_CONTENT_SUMMARY: {
+            success: true,
+            data: {
+              summary: 'Generated notes',
+              sections: 1,
+              historyWarning: 'Could not save this result.',
+            },
+          },
+        },
+      });
+      el('generate-summary-btn').click();
+      await vi.waitFor(() =>
+        expect(text('summary-content')).toBe('Generated notes')
+      );
+      expect(text('summary-confidence')).toContain('Not saved');
+      expect(text('toast-container')).toContain('Could not save');
+    });
+
+    it('keeps an answer visible and discloses failed chat persistence', async () => {
+      await openPopup({
+        overrides: {
+          ANSWER_CONTEXTUAL_QUESTION: {
+            success: true,
+            data: {
+              answer: 'Generated answer',
+              historyWarning: 'Could not save this result.',
+            },
+          },
+        },
+      });
+      el('chat-input').value = 'Explain this';
+      el('send-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('chat-history')).toContain('Generated answer')
+      );
+      expect(text('chat-memory-status')).toContain('Could not save');
+    });
+
     it('handles an empty document with a visible error', async () => {
       await openPopup({
         overrides: {

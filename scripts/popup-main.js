@@ -335,6 +335,10 @@ class PopupInterface {
       `${cached ? 'Saved summary · ' : ''}${describeCoverage(data)}`
     );
     show('summary-results');
+    if (data.historyWarning) {
+      setText('summary-confidence', `${describeCoverage(data)} · Not saved`);
+      this.showToast(data.historyWarning, 'warning');
+    }
   }
 
   async sendChatMessage() {
@@ -361,6 +365,10 @@ class PopupInterface {
 
       this.addChatMessage('assistant', response.data.answer);
       this.addChatSources(response.data.sources || [], response.data.retrieval);
+      if (response.data.historyWarning) {
+        setText('chat-memory-status', response.data.historyWarning);
+        this.showToast(response.data.historyWarning, 'warning');
+      }
 
       // Compatibility with an older worker response while an extension reloads.
       // Current retrieval responses report passage coverage through sources.
@@ -681,12 +689,12 @@ class PopupInterface {
     if (info) info.title = status;
   }
 
-  /** @param {string} message @param {'info'|'error'|'success'} [type] */
+  /** @param {string} message @param {'info'|'error'|'success'|'warning'} [type] */
   showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     if (!container) return;
     const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
+    toast.className = `toast ${type}`;
     toast.textContent = message;
     container.appendChild(toast);
     setTimeout(() => toast.remove(), 5000);

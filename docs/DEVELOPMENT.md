@@ -179,6 +179,10 @@ Storage read-modify-write operations are serialized per history key in the singl
 worker. Clear-chat and daily cleanup use the same queues. A failed mutation read
 propagates rather than overwriting history with an empty list. Read-only history
 access retains its logged fallback behavior.
+Generated summaries are stored once as `summary`; `text` is reconstructed for the
+response contract. If a history write fails (including storage quota), summary
+and chat results still reach the UI with a visible warning to copy the result.
+No second AI request is made just to retry persistence.
 
 `popup.html?workspace=1&tabId=123` uses an explicit source tab; ordinary popup
 startup queries the active tab. Workspace text/Markdown import validates an 8 MB

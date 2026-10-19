@@ -322,7 +322,7 @@ class BackgroundService {
       const saved = history.summaries.find(
         entry => entry.cacheKey === cacheKey
       );
-      if (saved) return { ...saved, cached: true };
+      if (saved) return { ...saved, text: saved.summary, cached: true };
     }
     const { chunks, droppedChars } = chunkContent(content);
 
@@ -337,7 +337,6 @@ class BackgroundService {
           };
 
     const summary = {
-      text: result.text,
       summary: result.text,
       provider: client.provider,
       model: client.model,
@@ -349,19 +348,41 @@ class BackgroundService {
         outputLength: result.text.length,
       },
     };
+    let historyWarning = '';
     if ((await this.configManager.getUserPreferences()).features.saveHistory) {
-      await this.storageService.saveSummaryHistory({
-        ...summary,
-        originalContent: content.slice(0, 500),
-        options: { type: payload.summaryType, length: payload.targetLength },
-        url: payload.url || '',
-        title: payload.title || '',
-        documentKey: identity,
-        cacheKey,
-        timestamp: Date.now(),
-      });
+      historyWarning = await this.recordHistory(() =>
+        this.storageService.saveSummaryHistory({
+          ...summary,
+          originalContent: content.slice(0, 500),
+          options: { type: payload.summaryType, length: payload.targetLength },
+          url: payload.url || '',
+          title: payload.title || '',
+          documentKey: identity,
+          cacheKey,
+          timestamp: Date.now(),
+        })
+      );
     }
-    return { ...summary, cached: false };
+    return { ...summary, text: summary.summary, cached: false, historyWarning };
+  }
+
+  /**
+   * History is secondary to the already-generated result. A quota or storage
+   * failure must not hide paid work or cause the user to request it again.
+   * @param {() => Promise<unknown>} save
+   * @returns {Promise<string>}
+   */
+  async recordHistory(save) {
+    try {
+      await save();
+      return '';
+    } catch (error) {
+      this.logger.warn(
+        'Result generated but history save failed',
+        /** @type {Error} */ (error).message
+      );
+      return 'Could not save this result. Copy it before closing.';
+    }
   }
 
   /**
@@ -452,28 +473,32 @@ class BackgroundService {
       sourceContext: true,
     });
     const settings = await this.configManager.getUserPreferences();
-    if (settings.features.saveHistory)
-      await this.storageService.updateConversationHistory({
-        question: payload.question,
-        answer: result.text,
-        context: context.slice(0, 200),
-        documentKey: identity,
-        url: payload.url || '',
-        title: payload.title || '',
-        sources: retrieved.sources.map(({ id, start, end, excerpt }) => ({
-          id,
-          start,
-          end,
-          text: excerpt,
-        })),
-        timestamp: Date.now(),
-      });
+    const historyWarning = settings.features.saveHistory
+      ? await this.recordHistory(() =>
+          this.storageService.updateConversationHistory({
+            question: payload.question,
+            answer: result.text,
+            context: context.slice(0, 200),
+            documentKey: identity,
+            url: payload.url || '',
+            title: payload.title || '',
+            sources: retrieved.sources.map(({ id, start, end, excerpt }) => ({
+              id,
+              start,
+              end,
+              text: excerpt,
+            })),
+            timestamp: Date.now(),
+          })
+        )
+      : '';
 
     return {
       ...result,
       answer: result.text,
       sources: retrieved.sources,
       retrieval: retrieved.retrieval,
+      historyWarning,
     };
   }
 

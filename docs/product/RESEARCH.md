@@ -115,6 +115,9 @@ three documents in worker memory and is rebuilt after worker suspension. Full
 imports are not stored, while saved excerpts and answers remain sensitive local
 data. History writes/clear/cleanup are serialized per key to avoid losing turns
 from simultaneous extension pages; failed reads cannot overwrite existing history.
+Generated summary text is stored once. A quota/write failure leaves the generated
+summary or answer visible, with a warning to copy it before closing. Regression
+tests verify that persistence failure does not issue another provider request.
 
 Summary cache keys include a prompt-format version, document identity, provider,
 model, style, and length. Prompt changes that affect summary meaning require
@@ -189,9 +192,9 @@ Windows / Node 22.18 / Intel Core Ultra 7 155H run:
 
 | Text size            | Index p50 / p95  | Query p50 / p95  | Exact late-evidence hits |
 | -------------------- | ---------------- | ---------------- | ------------------------ |
-| 50,000 characters    | 2.25 / 5.41 ms   | 0.026 / 0.096 ms | 50/50                    |
-| 500,000 characters   | 9.61 / 14.35 ms  | 0.041 / 0.147 ms | 50/50                    |
-| 2,000,000 characters | 36.84 / 38.62 ms | 0.114 / 0.218 ms | 50/50                    |
+| 50,000 characters    | 1.72 / 5.25 ms   | 0.027 / 0.108 ms | 50/50                    |
+| 500,000 characters   | 9.90 / 15.23 ms  | 0.041 / 0.222 ms | 50/50                    |
+| 2,000,000 characters | 38.06 / 40.41 ms | 0.103 / 0.200 ms | 50/50                    |
 
 The previous opening-only 24,000-character context contains the answer in none
 of these fixtures. This demonstrates that exact late evidence can be selected,
@@ -200,17 +203,24 @@ low-vocabulary fixture and repeated identical question make this a narrow
 microbenchmark. It excludes provider/network latency, semantic paraphrases, real
 book diversity, PDF/OCR, and end-to-end browser memory. No production p95 or
 instant-reading promise follows from these numbers.
+Boundary searches are limited to the current passage, avoiding repeated scans of
+the entire prefix for unbroken text. The maximum-size unbroken input is included
+in the retrieval regression tests; no timing threshold is enforced in CI.
 
 ## Verification and remaining issues
 
 Locally run on the implementation before release: lint with zero warnings,
-TypeScript checking, **281 unit/integration tests**, and **17 real-Chromium browser
-tests**, all passing. Unit coverage: **94.00% statements, 83.00% branches,
-94.04% functions, 96.18% lines**; worker branch coverage **87.50%**. Coverage floors
+TypeScript checking, **285 unit/integration tests**, and **17 real-Chromium browser
+tests**, all passing. Unit coverage: **94.26% statements, 83.55% branches,
+94.50% functions, 96.44% lines**; worker branch coverage **87.50%**. Coverage floors
 remain unchanged, and every global measure exceeds the PR #25 baseline.
 Browser requests are intercepted; the workspace screenshot was visually checked.
 CI and package verification for the product PR are recorded in its checks and
 description, separately from these local results.
+An additional browser run exposed a first-install race: onboarding could redirect
+the tab while a test opened the popup. The browser fixture now waits for the
+initial options page before exercising later navigation; this is lifecycle
+synchronization, not a retry that masks product errors.
 
 Addressed work: provider test (#16), persisted languages (#18), restored chat
 (#21), history-off behavior (#28), and model defaults (#29). Still open: whole
