@@ -107,28 +107,11 @@ tests alongside the existing ones in `tests/providers/ai-client.test.js`.
 
 ## Branching Model
 
-We use a simplified Git Flow tailored for extensions:
-
-```mermaid
-gitGraph
-    commit id:"seed"
-    branch develop
-    checkout develop
-    commit id:"work"
-    branch feature/provider-fallback
-    checkout feature/provider-fallback
-    commit id:"impl"
-    commit id:"tests"
-    checkout develop
-    merge feature/provider-fallback
-    checkout main
-    merge develop
-    commit id:"release v4.1.1"
-```
-
-- `main`: stable, released code (protected)
-- `develop`: integration branch for next release
-- `feature/*`, `fix/*`, `docs/*`, `chore/*` short‑lived branches
+Create short-lived feature, fix, documentation, or maintenance branches from
+current `main`, and target the final integration PR at `main`. This repository
+does not use a long-lived `develop` branch. A stacked PR may target an unmerged
+feature branch; retarget it at `main` when its base lands. Branch protection is
+a repository setting, not a guarantee made by this guide.
 
 ## Commit Guidelines
 
