@@ -51,7 +51,8 @@
 ## Development Setup
 
 ### Prerequisites
-- Node.js >= 18, npm >= 9
+
+- Node.js >= 20.19, npm >= 10
 - Chrome >= 116 (MV3 service worker modules)
 - Git
 
@@ -61,6 +62,7 @@ There is no `.env` file. Provider selection, API keys, and model overrides all
 live on the extension's options page and are stored in `chrome.storage.sync`.
 
 ### Common scripts
+
 ```bash
 npm run verify   # lint + typecheck + test — run before every PR
 npm test         # Unit and integration tests (Vitest)
@@ -105,28 +107,11 @@ tests alongside the existing ones in `tests/providers/ai-client.test.js`.
 
 ## Branching Model
 
-We use a simplified Git Flow tailored for extensions:
-
-```mermaid
-gitGraph
-    commit id:"seed"
-    branch develop
-    checkout develop
-    commit id:"work"
-    branch feature/provider-fallback
-    checkout feature/provider-fallback
-    commit id:"impl"
-    commit id:"tests"
-    checkout develop
-    merge feature/provider-fallback
-    checkout main
-    merge develop
-    commit id:"release v4.1.1"
-```
-
-- `main`: stable, released code (protected)
-- `develop`: integration branch for next release
-- `feature/*`, `fix/*`, `docs/*`, `chore/*` short‑lived branches
+Create short-lived feature, fix, documentation, or maintenance branches from
+current `main`, and target the final integration PR at `main`. This repository
+does not use a long-lived `develop` branch. A stacked PR may target an unmerged
+feature branch; retarget it at `main` when its base lands. Branch protection is
+a repository setting, not a guarantee made by this guide.
 
 ## Commit Guidelines
 
@@ -141,6 +126,7 @@ chore(ci): add CodeQL security scan
 ```
 
 Rules:
+
 - Imperative mood, max 50 chars subject, no trailing period
 - Optional body wraps at 72 cols; explain motivation, approach, tradeoffs
 - Reference issues: `Closes #123`, `Refs #456`
@@ -149,17 +135,28 @@ Rules:
 ## Code Style Guidelines
 
 ### JavaScript/TypeScript
+
 - Use TypeScript types in new/changed files when possible
 - Prefer pure functions, avoid side effects in providers/services
-- Strict input validation (zod/validators) and output typing
+- Validate message boundaries and escape rendered output; see [the security guide](docs/SECURITY.md)
 - No direct DOM injection; sanitize with DOMPurify before rendering
 - Avoid long functions (>40 lines). Extract helpers.
 
 Example patterns:
+
 ```ts
 // Typed provider request
-export interface AIRequest { kind: 'summary'|'qa'|'translate'|'analyze'; text: string; locale?: string; }
-export interface AIResponse { content: string; tokens?: number; latencyMs?: number; sources?: string[] }
+export interface AIRequest {
+  kind: 'summary' | 'qa' | 'translate' | 'analyze';
+  text: string;
+  locale?: string;
+}
+export interface AIResponse {
+  content: string;
+  tokens?: number;
+  latencyMs?: number;
+  sources?: string[];
+}
 
 export async function summarize(req: AIRequest): Promise<AIResponse> {
   if (req.kind !== 'summary') throw new Error('invalid kind');
@@ -169,24 +166,28 @@ export async function summarize(req: AIRequest): Promise<AIResponse> {
 ```
 
 ### UI/UX
+
 - Keep popup UI responsive and accessible (ARIA labels, tab order)
 - Respect prefers-color-scheme; ensure contrast and keyboard navigation
 - No blocking operations on UI thread; use async boundaries and spinners
 
 ### Security & Privacy
+
 - Do not log API keys or user content
-- Use `chrome.storage.sync/local` with minimal retention; encrypt secrets
+- Treat `chrome.storage.sync/local` as plaintext; keep API keys out of logs and exports
 - Enforce CSP in manifest; never eval or inline scripts
 - Strip PII before sending to external APIs where feasible
 
 ## Security & Privacy
 
 All contributions must comply with:
+
 - Manifest V3 policies (no remote code, background service worker)
 - Chrome Web Store / Edge Add-ons policies
 - Minimum-permission principle
 
 Checklist before PR:
+
 - [ ] No secrets in code or history
 - [ ] Inputs validated and sanitized
 - [ ] External requests over HTTPS with proper hosts
@@ -194,11 +195,15 @@ Checklist before PR:
 
 ## Testing Requirements
 
-Coverage targets (guideline, not hard fail):
+CI enforces coverage over all shipped JavaScript: 88% lines, 85% statements,
+85% functions, and 78% branches, plus a 75% branch floor for `background.js`.
+See [vitest.config.js](vitest.config.js). Additional goals:
+
 - Unit: ≥ 80% lines on changed modules
 - E2E: happy paths for popup, summary, Q&A, translate
 
 Examples:
+
 ```ts
 // Vitest unit example
 import { describe, it, expect } from 'vitest';
@@ -220,7 +225,9 @@ test('popup opens and summarizes page', async ({ page }) => {
   // open extension UI per your test harness
   await expect(page.locator('.genai-popup')).toBeVisible();
   await page.click('#summarize');
-  await expect(page.locator('.summary-result')).toHaveText(/summary/i, { timeout: 10000 });
+  await expect(page.locator('.summary-result')).toHaveText(/summary/i, {
+    timeout: 10000,
+  });
 });
 ```
 
@@ -228,45 +235,62 @@ CI checks must pass: lint, typecheck, unit, e2e (where configured).
 
 ## Pull Request Workflow
 
+Target `main` for the final integration PR. Stacked PRs can target a feature
+branch while it has unmerged work; CI rejects a base already contained in the
+default branch and asks you to retarget. See
+[the development guide](docs/DEVELOPMENT.md#pull-requests-and-packaging) for the
+check's scope and packaging rules.
+
 Pre‑flight:
+
 - [ ] Lint, typecheck, tests pass locally
 - [ ] Updated README/docs for user‑facing changes
 - [ ] Added/updated tests
 - [ ] Coverage did not regress (`npm run test:coverage` enforces a threshold)
 
 PR Description Template:
+
 ```markdown
 ## Summary
+
 What changed and why.
 
 ## Changes
+
 - ...
 
 ## Tests
+
 - Unit:
 - E2E:
 
 ## Screenshots
+
 (If UI changed)
 
 ## Risks & Rollback
+
 Potential impact and how to revert.
 
 ## Related
+
 Closes #123, Refs #456
 ```
 
 Labels:
+
 - `bug`, `enhancement`, `documentation`, `dependencies`, `security`, `breaking change`, `good first issue`
 
 ## Review Process
 
 For reviewers:
+
 - Focus on correctness, security, privacy, and maintainability
 - Suggest concrete improvements; prefer questions over directives
 - Approve if concerns are addressed even if further polish is possible
 
 For authors:
+
 - Respond to all comments
 - Keep commits clean (squash before merge unless history is valuable)
 - Provide benchmarks when touching performance‑critical paths
@@ -276,6 +300,7 @@ For authors:
 We use SemVer and align `manifest.json` version with `package.json`.
 
 Steps:
+
 1. Update versions: `npm version patch|minor|major`
 2. Update CHANGELOG.md
 3. Smoke test: `npm run verify && npm run test:e2e`
@@ -283,14 +308,17 @@ Steps:
    `activeTab` is granted only on a real toolbar click, which the E2E suite
    cannot perform
 5. Tag and push: `git push --follow-tags`
-6. Create a GitHub release; the CI `package` job attaches the zip
+6. Download the ZIP from the CI `package` job's Actions artifact; create a GitHub
+   release separately if distributing it
 
 ## Issue Triage
 
 Triage labels we use:
+
 - `needs repro`, `blocked`, `security`, `performance`, `help wanted`, `good first issue`
 
 When filing a bug, include:
+
 - Repro steps, expected vs actual, console logs (redacted), browser version, OS, extension version.
 
 ## Community Expectations

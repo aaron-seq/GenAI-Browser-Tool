@@ -7,8 +7,31 @@ on:
   # must still be checked. Filtering on [main] silently gave those PRs no checks
   # at all, which looks identical to "nothing to run".
   pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
 
 jobs:
+  pr-base:
+    name: PR base is still active
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Reject an already merged base branch
+        env:
+          PR_BASE_BRANCH: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node .github/scripts/check-pr-base.mjs
+
   verify:
     name: Lint, typecheck, unit tests
     runs-on: ubuntu-latest
@@ -28,6 +51,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit dependencies
+        if: matrix.node-version == '22.x'
+        run: npm audit --audit-level=high
 
       - name: Lint
         run: npm run lint
@@ -93,15 +120,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The repository root *is* the loadable extension: the manifest points at
-      # the source files and Chrome loads ES modules natively in MV3. There is
-      # no build step to run.
+      # Explicit inputs keep legacy dist/, local secrets, and tooling out of
+      # the package even when they exist in a developer's checkout.
       - name: Create unpacked extension zip
         run: |
-          zip -r genai-browser-tool.zip . \
-            -x 'node_modules/*' 'tests/*' 'docs/*' '.git/*' '.github/*' \
-               '.husky/*' 'coverage/*' 'playwright-report/*' '*.config.js' \
-               'package*.json'
+          zip -r genai-browser-tool.zip \
+            manifest.json background.js content.js options.js \
+            options.html options.css popup.html \
+            assets core providers scripts services styles utils README.md LICENSE
 
       - name: Upload extension artifact
         uses: actions/upload-artifact@v4

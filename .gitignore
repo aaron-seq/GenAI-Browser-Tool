@@ -1,6 +1,10 @@
 # Dependencies
 /node_modules
 
+# Legacy build output is not part of the source-loaded extension.
+/dist
+/build
+
 # Test output
 /coverage
 /playwright-report
