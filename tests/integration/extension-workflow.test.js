@@ -595,6 +595,211 @@ describe('Extension workflow', () => {
     });
   });
 
+  describe('feature preference enforcement (#31)', () => {
+    const setFeatures = features =>
+      chrome.storage.sync.get.mockResolvedValue({
+        user_preferences: {
+          ...CONFIGURED.user_preferences,
+          features: { ...CONFIGURED.user_preferences.features, ...features },
+        },
+      });
+    const changed = (oldEnabled, newEnabled) => ({
+      user_preferences: {
+        oldValue: { features: { contextMenus: oldEnabled } },
+        newValue: { features: { contextMenus: newEnabled } },
+      },
+    });
+    const storageListener = () => {
+      const handler = chrome.storage.onChanged.addListener.mock.calls[0]?.[0];
+      expect(handler).toBeTypeOf('function');
+      return handler;
+    };
+
+    beforeEach(async () => {
+      await vi.waitFor(() =>
+        expect(chrome.contextMenus.create).toHaveBeenCalledTimes(7)
+      );
+      chrome.contextMenus.create.mockClear();
+      chrome.contextMenus.removeAll.mockClear();
+    });
+
+    it('does not recreate disabled menus when the worker restarts', async () => {
+      setFeatures({ contextMenus: false });
+      vi.resetModules();
+      vi.clearAllMocks();
+      await import('../../background.js');
+      await vi.waitFor(() =>
+        expect(chrome.contextMenus.removeAll).toHaveBeenCalled()
+      );
+      expect(chrome.contextMenus.create).not.toHaveBeenCalled();
+    });
+
+    it('applies off/on settings changes without a reload or duplicate menu IDs', async () => {
+      const handler = storageListener();
+      setFeatures({ contextMenus: false });
+      await handler(changed(true, false), 'sync');
+      expect(chrome.contextMenus.create).not.toHaveBeenCalled();
+      setFeatures({ contextMenus: true });
+      await handler(changed(false, true), 'sync');
+      expect(chrome.contextMenus.removeAll).toHaveBeenCalledTimes(2);
+      expect(chrome.contextMenus.create).toHaveBeenCalledTimes(7);
+      expect(
+        new Set(chrome.contextMenus.create.mock.calls.map(([item]) => item.id))
+          .size
+      ).toBe(7);
+    });
+
+    it('ignores unrelated storage and non-menu settings changes', async () => {
+      const handler = storageListener();
+      await handler(changed(true, false), 'local');
+      await handler({ other: { newValue: false } }, 'sync');
+      await handler(changed(true, true), 'sync');
+      expect(chrome.contextMenus.removeAll).not.toHaveBeenCalled();
+    });
+
+    it('serializes rapid off/on changes until callback removal completes', async () => {
+      const handler = storageListener();
+      const removals = [];
+      chrome.contextMenus.removeAll.mockImplementationOnce(callback =>
+        removals.push(callback)
+      );
+      chrome.contextMenus.removeAll.mockImplementationOnce(callback =>
+        removals.push(callback)
+      );
+      setFeatures({ contextMenus: false });
+      const off = handler(changed(true, false), 'sync');
+      await vi.waitFor(() => expect(removals).toHaveLength(1));
+      setFeatures({ contextMenus: true });
+      const on = handler(changed(false, true), 'sync');
+      expect(removals).toHaveLength(1);
+      removals.shift()();
+      await off;
+      await vi.waitFor(() => expect(removals).toHaveLength(1));
+      removals.shift()();
+      await on;
+      expect(chrome.contextMenus.create).toHaveBeenCalledTimes(7);
+    });
+
+    it.each(['removeAll', 'create'])(
+      'recovers after a %s API callback error',
+      async method => {
+        const handler = storageListener();
+        const errorLog = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+        chrome.contextMenus[method].mockImplementationOnce((...args) => {
+          chrome.runtime.lastError = { message: 'Menu API unavailable' };
+          try {
+            args.at(-1)();
+          } finally {
+            delete chrome.runtime.lastError;
+          }
+        });
+        try {
+          setFeatures({ contextMenus: true });
+          await handler(changed(false, true), 'sync');
+          expect(errorLog).toHaveBeenCalledWith(
+            '[BackgroundService] Context menu update failed',
+            'Menu API unavailable'
+          );
+          expect(JSON.stringify(errorLog.mock.calls)).not.toContain(
+            'sk-ant-test'
+          );
+          setFeatures({ contextMenus: false });
+          await handler(changed(true, false), 'sync');
+          setFeatures({ contextMenus: true });
+          await handler(changed(false, true), 'sync');
+          const recreated = chrome.contextMenus.create.mock.calls
+            .slice(-7)
+            .map(([item]) => item.id);
+          expect(new Set(recreated).size).toBe(7);
+        } finally {
+          errorLog.mockRestore();
+        }
+      }
+    );
+
+    it('blocks stale menu clicks before extraction or a provider request', async () => {
+      setFeatures({ contextMenus: false });
+      global.fetch.mockResolvedValue(CLAUDE_REPLY);
+      await chrome.contextMenus.onClicked.addListener.mock.calls[0][0](
+        { menuItemId: 'genai-summarize-page' },
+        { id: 1 }
+      );
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(chrome.notifications.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['success', 'error'])(
+      'suppresses %s notifications when disabled',
+      async outcome => {
+        setFeatures({ notifications: false });
+        global.fetch.mockResolvedValue(
+          outcome === 'success'
+            ? CLAUDE_REPLY
+            : {
+                ...okResponse({ error: { message: 'Invalid API key' } }),
+                ok: false,
+                status: 401,
+              }
+        );
+        await chrome.contextMenus.onClicked.addListener.mock.calls[0][0](
+          {
+            menuItemId: 'genai-summarize-selection',
+            selectionText: 'Selected text',
+          },
+          { id: 1 }
+        );
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(chrome.notifications.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it('honors notification opt-out while a request is in flight', async () => {
+      let finish;
+      global.fetch.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finish = resolve;
+          })
+      );
+      const pending =
+        chrome.contextMenus.onClicked.addListener.mock.calls[0][0](
+          {
+            menuItemId: 'genai-summarize-selection',
+            selectionText: 'Selected text',
+          },
+          { id: 1 }
+        );
+      await vi.waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      setFeatures({ notifications: false });
+      finish(CLAUDE_REPLY);
+      await pending;
+      expect(chrome.notifications.create).not.toHaveBeenCalled();
+    });
+
+    it.each([true, false])(
+      'keeps shortcuts independent of menu visibility, with notifications=%s',
+      async notifications => {
+        setFeatures({ contextMenus: false, notifications });
+        chrome.tabs.query.mockResolvedValueOnce([{ id: 42 }]);
+        chrome.tabs.sendMessage.mockResolvedValue({
+          success: true,
+          data: { mainText: 'Page text' },
+        });
+        global.fetch.mockResolvedValue(CLAUDE_REPLY);
+        await chrome.commands.onCommand.addListener.mock.calls[0][0](
+          'quick-summarize'
+        );
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(chrome.notifications.create).toHaveBeenCalledTimes(
+          notifications ? 1 : 0
+        );
+      }
+    );
+  });
+
   describe('keyboard commands', () => {
     it('summarizes the active tab for quick-summarize', async () => {
       chrome.tabs.query.mockResolvedValueOnce([{ id: 42 }]);
