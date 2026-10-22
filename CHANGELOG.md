@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Apply context-menu and desktop-notification preferences in the worker, including
+  settings changes, stale clicks, and opt-out during an in-flight request (#31).
+
 ## [5.3.0] - 2026-10-20
 
 ### Added
