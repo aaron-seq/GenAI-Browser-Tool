@@ -226,8 +226,9 @@ Addressed work: provider test (#16), persisted languages (#18), restored chat
 (#21), history-off behavior (#28), and model defaults (#29). Still open: whole
 long-task coverage (#17), user-data import/export (#19), repository-wide
 formatting (#20), book formats (#26), and semantic service evaluation (#27).
-The final source review also found the saved context-menu and notification
-toggles are not consulted by their worker paths; this existing gap is recorded
-with code evidence and acceptance checks in
-[#31](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/31).
+The final source review also found ignored context-menu and notification toggles.
+The subsequent [preference fix (#31)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/31)
+adds worker checks, serialized menu updates on settings changes, and notification
+opt-out checks after in-flight requests. The issue holds the current ERB decision,
+test-first evidence, and validation; shortcuts remain independent of menu visibility.
 These are tracked gaps; they are not hidden behind an “all features complete” claim.

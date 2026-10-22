@@ -77,6 +77,7 @@ class BackgroundService {
     this.notificationManager = new NotificationManager();
     /** @type {Map<string, DocumentIndex>} */
     this.documentIndexes = new Map();
+    this.menuUpdates = Promise.resolve();
 
     this.registerListeners();
     this.initialize();
@@ -110,6 +111,16 @@ class BackgroundService {
     chrome.commands.onCommand.addListener(this.handleCommand.bind(this));
     chrome.alarms.onAlarm.addListener(this.handleAlarm.bind(this));
     chrome.alarms.create('cleanupOldData', { periodInMinutes: 1440 });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      const change = changes.user_preferences;
+      if (area !== 'sync' || !change) return;
+      const before = this.configManager.withDefaults(change.oldValue);
+      const after = this.configManager.withDefaults(change.newValue);
+      if (before.features.contextMenus === after.features.contextMenus) return;
+      return this.createContextMenus().catch(error => {
+        this.logger.error('Context menu update failed', error.message);
+      });
+    });
   }
 
   // ---------------------------------------------------------------- messaging
@@ -596,65 +607,94 @@ class BackgroundService {
 
   // ------------------------------------------------------------ context menus
 
-  async createContextMenus() {
-    await chrome.contextMenus.removeAll();
+  createContextMenus() {
+    // Reconcile in order, including concurrent startup/install/change events.
+    // A failed update reaches its caller but does not prevent the next attempt.
+    this.menuUpdates = this.menuUpdates
+      .catch(() => {})
+      .then(async () => {
+        const settings = await this.configManager.getUserPreferences();
+        await new Promise((resolve, reject) => {
+          // Promise-based removal is Chrome 123+; the extension supports 116+.
+          chrome.contextMenus.removeAll(() => {
+            const error = chrome.runtime.lastError;
+            if (error) reject(new Error(error.message));
+            else resolve(undefined);
+          });
+        });
+        if (!settings.features.contextMenus) return;
 
-    /** @type {chrome.contextMenus.CreateProperties[]} */
-    const items = [
-      {
-        id: 'genai-summarize-selection',
-        title: 'Summarize selected text',
-        contexts: ['selection'],
-      },
-      {
-        id: 'genai-explain-selection',
-        title: 'Explain this selection',
-        contexts: ['selection'],
-      },
-      {
-        id: 'genai-translate-selection',
-        title: 'Translate selection',
-        contexts: ['selection'],
-      },
-      {
-        id: 'genai-analyze-sentiment',
-        title: 'Analyze sentiment',
-        contexts: ['selection'],
-      },
-      {
-        id: 'genai-summarize-page',
-        title: 'Summarize entire page',
-        contexts: ['page'],
-      },
-      {
-        id: 'genai-extract-insights',
-        title: 'Extract key insights',
-        contexts: ['page'],
-      },
-      {
-        id: 'genai-generate-tags',
-        title: 'Generate smart tags',
-        contexts: ['page'],
-      },
-    ];
-    items.forEach(item => chrome.contextMenus.create(item));
+        /** @type {chrome.contextMenus.CreateProperties[]} */
+        const items = [
+          {
+            id: 'genai-summarize-selection',
+            title: 'Summarize selected text',
+            contexts: ['selection'],
+          },
+          {
+            id: 'genai-explain-selection',
+            title: 'Explain this selection',
+            contexts: ['selection'],
+          },
+          {
+            id: 'genai-translate-selection',
+            title: 'Translate selection',
+            contexts: ['selection'],
+          },
+          {
+            id: 'genai-analyze-sentiment',
+            title: 'Analyze sentiment',
+            contexts: ['selection'],
+          },
+          {
+            id: 'genai-summarize-page',
+            title: 'Summarize entire page',
+            contexts: ['page'],
+          },
+          {
+            id: 'genai-extract-insights',
+            title: 'Extract key insights',
+            contexts: ['page'],
+          },
+          {
+            id: 'genai-generate-tags',
+            title: 'Generate smart tags',
+            contexts: ['page'],
+          },
+        ];
+        await Promise.all(
+          items.map(
+            item =>
+              new Promise((resolve, reject) => {
+                chrome.contextMenus.create(item, () => {
+                  const error = chrome.runtime.lastError;
+                  if (error) reject(new Error(error.message));
+                  else resolve(undefined);
+                });
+              })
+          )
+        );
+      });
+    return this.menuUpdates;
   }
 
   /**
    * @param {chrome.contextMenus.OnClickData} info
    * @param {chrome.tabs.Tab} [tab]
+   * @param {boolean} [fromCommand] Shortcuts are independent of menu visibility.
    */
-  async handleContextMenu(info, tab) {
+  async handleContextMenu(info, tab, fromCommand = false) {
     const entry = CONTEXT_MENU_TASKS[String(info.menuItemId)];
     if (!entry) return;
 
     try {
+      const settings = await this.configManager.getUserPreferences();
+      if (!fromCommand && !settings.features.contextMenus) return;
       const content =
         entry.source === 'selection'
           ? info.selectionText || ''
           : (await this.extractPageContent(tab?.id)).mainText;
 
-      const settings = await this.configManager.getUserPreferences();
       const result = await this.runTask(entry.task, {
         content,
         summaryType: settings.summaryType,
@@ -662,15 +702,21 @@ class BackgroundService {
         targetLanguage: settings.targetLanguage,
       });
 
-      this.notificationManager.showSuccess(
-        entry.title,
-        truncateForNotification(result.text)
-      );
+      if (
+        (await this.configManager.getUserPreferences()).features.notifications
+      )
+        this.notificationManager.showSuccess(
+          entry.title,
+          truncateForNotification(result.text)
+        );
     } catch (error) {
       /** @type {any} */
       const err = error;
       this.logger.error('Context menu action failed', err.message);
-      this.notificationManager.showError(err.message);
+      if (
+        (await this.configManager.getUserPreferences()).features.notifications
+      )
+        this.notificationManager.showError(err.message);
     }
   }
 
@@ -683,7 +729,8 @@ class BackgroundService {
       });
       await this.handleContextMenu(
         /** @type {any} */ ({ menuItemId: 'genai-summarize-page' }),
-        tab
+        tab,
+        true
       );
     }
   }

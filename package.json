@@ -47,7 +47,7 @@
     "@types/chrome": "^0.2.7",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^24.13.3",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.12",
     "eslint": "^10.9.1",
     "globals": "^16.5.0",
     "husky": "^9.1.7",
@@ -55,7 +55,7 @@
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "comments": {
     "dependencies": "The extension ships zero runtime dependencies: fetch, chrome.* APIs, and the DOM only. It also has no build step — the repository root is the loadable extension, so packaging is a zip of the root."

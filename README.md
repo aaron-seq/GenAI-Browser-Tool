@@ -99,9 +99,10 @@ An optional private semantic retrieval service is being researched in
 [#27](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/27). No backend, local
 model, or semantic embedding service is installed by this release.
 
-Known settings gap: the context-menu and desktop-notification toggles are saved
-but currently ignored by the worker. This is tracked in
-[#31](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/31).
+Options apply immediately: disabling context menus removes the right-click
+actions; the keyboard shortcut remains available. Disabling notifications
+suppresses desktop notices, including errors and shortcut results. Popup and
+workspace results remain visible. See the [preference fix](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/31).
 
 ## Troubleshooting
 

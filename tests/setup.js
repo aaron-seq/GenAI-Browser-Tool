@@ -35,6 +35,7 @@ const mockChrome = {
     id: 'mock-extension-id',
   },
   storage: {
+    onChanged: { addListener: vi.fn() },
     local: {
       get: vi.fn().mockResolvedValue({}),
       set: vi.fn().mockResolvedValue(undefined),
@@ -57,8 +58,14 @@ const mockChrome = {
     onActivated: { addListener: vi.fn() },
   },
   contextMenus: {
-    create: vi.fn(),
-    removeAll: vi.fn().mockResolvedValue(undefined),
+    create: vi.fn((item, callback) => {
+      callback?.();
+      return item.id;
+    }),
+    removeAll: vi.fn(callback => {
+      callback?.();
+      return Promise.resolve();
+    }),
     onClicked: { addListener: vi.fn() },
   },
   commands: { onCommand: { addListener: vi.fn() } },
