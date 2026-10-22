@@ -1,11 +1,34 @@
 # Changelog
 
-## Unreleased
+All notable changes to the GenAI Browser Tool project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
 
 ### Fixed
 
 - Apply context-menu and desktop-notification preferences in the worker, including
   settings changes, stale clicks, and opt-out during an in-flight request (#31).
+- Patch Vitest and matching coverage packages to 4.1.12 and Vite to 8.2.4 for
+  development-tool advisories, retaining unrelated locked versions (#34).
+- Legacy `dist/` and `build/` output no longer breaks linting or enters the CI
+  extension ZIP; packaging now lists runtime inputs explicitly.
+- Updated development dependency resolutions for `brace-expansion`,
+  `source-map-js`, and `undici` to address current security advisories. Corrected
+  the lockfile's root version to match the existing 5.2.0 package and manifest.
+- Corrected stale developer documentation describing removed providers, message
+  actions, and encrypted API-key storage.
+
+### Added
+
+- A read-only CI guard rejects a stacked PR whose base is already contained in
+  the default branch, with Git-history regression tests (issue #22).
+- Service-worker regression tests for startup failure, page context menus,
+  keyboard commands, lifecycle events, alarms, and extraction failures (issue #23).
+- A high-severity dependency audit in CI, a 78% global branch-coverage floor,
+  and a separate 75% floor for `background.js`.
 
 ## [5.3.0] - 2026-10-20
 
@@ -33,32 +56,6 @@
 
 - PDF/EPUB/OCR and optional semantic backend remain tracked follow-ups. Retrieval
   is lexical and bounded; translation/analysis retain their 24,000-character cap.
-
-All notable changes to the GenAI Browser Tool project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Fixed
-
-- Legacy `dist/` and `build/` output no longer breaks linting or enters the CI
-  extension ZIP; packaging now lists runtime inputs explicitly.
-- Updated development dependency resolutions for `brace-expansion`,
-  `source-map-js`, and `undici` to address current security advisories. Corrected
-  the lockfile's root version to match the existing 5.2.0 package and manifest.
-- Corrected stale developer documentation describing removed providers, message
-  actions, and encrypted API-key storage.
-
-### Added
-
-- A read-only CI guard rejects a stacked PR whose base is already contained in
-  the default branch, with Git-history regression tests (issue #22).
-- Service-worker regression tests for startup failure, page context menus,
-  keyboard commands, lifecycle events, alarms, and extraction failures (issue #23).
-- A high-severity dependency audit in CI, a 78% global branch-coverage floor,
-  and a separate 75% floor for `background.js`.
 
 ## [5.2.0]
 
@@ -250,7 +247,9 @@ providers that returned hardcoded strings.
   `rollup.config.js`, `.env.example`, `test_results.txt` — deployment and build
   config for a web app this repository does not contain.
 
-## [Unreleased]
+## Archived setup notes (undated)
+
+These legacy notes are retained for history. See 5.0 and later entries for removed tooling.
 
 ### Added
 
