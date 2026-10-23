@@ -902,6 +902,63 @@ describe('popup', () => {
   });
 
   describe('tabs', () => {
+    it('exposes the selected tab and its panel and keeps keyboard focus on the tabs', async () => {
+      await openPopup();
+      const summary = document.querySelector('[data-tab="summary"]');
+      const chat = document.querySelector('[data-tab="chat"]');
+      expect(summary.getAttribute('role')).toBe('tab');
+      expect(summary.getAttribute('aria-selected')).toBe('true');
+      expect(chat.tabIndex).toBe(-1);
+      summary.focus();
+      summary.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+      );
+      expect(document.activeElement).toBe(chat);
+      expect(chat.getAttribute('aria-selected')).toBe('true');
+      expect(chat.tabIndex).toBe(0);
+      expect(el('summary-tab').hidden).toBe(true);
+      expect(el('chat-tab').hidden).toBe(false);
+      expect(el('chat-tab').getAttribute('aria-labelledby')).toBe(chat.id);
+      chat.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'End', bubbles: true })
+      );
+      expect(document.activeElement.dataset.tab).toBe('tools');
+      document.activeElement.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+      );
+      expect(document.activeElement).toBe(summary);
+      summary.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })
+      );
+      expect(document.activeElement.dataset.tab).toBe('tools');
+      document.activeElement.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Home', bubbles: true })
+      );
+      expect(document.activeElement).toBe(summary);
+    });
+
+    it('preserves the complete study prompt behind a short action label', async () => {
+      await openPopup({
+        overrides: {
+          ANSWER_CONTEXTUAL_QUESTION: {
+            success: true,
+            data: { answer: 'Study notes' },
+          },
+        },
+      });
+      document.querySelector('[data-tab="chat"]').click();
+      const chip = [...document.querySelectorAll('.suggestion-chip')].find(
+        button => button.textContent.trim() === 'Study guide'
+      );
+      expect(chip).toBeDefined();
+      chip.click();
+      await vi.waitFor(() =>
+        expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')?.question).toBe(
+          'Make a study guide with key concepts and examples from this document'
+        )
+      );
+    });
+
     it('activates the pane for the clicked tab', async () => {
       await openPopup();
 
