@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore keyboard access to summary-length radios and expose task-tab selection,
+  panel relationships, and Arrow/Home/End navigation (#36).
 - Apply context-menu and desktop-notification preferences in the worker, including
   settings changes, stale clicks, and opt-out during an in-flight request (#31).
 - Patch Vitest and matching coverage packages to 4.1.12 and Vite to 8.2.4 for
@@ -23,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A redesigned popup and reading workspace with a persistent source panel,
+  neutral/teal light and dark themes, local SVG icons, clear task labels,
+  compact study prompts, and responsive layouts (#36).
 - A read-only CI guard rejects a stacked PR whose base is already contained in
   the default branch, with Git-history regression tests (issue #22).
 - Service-worker regression tests for startup failure, page context menus,

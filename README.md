@@ -10,6 +10,12 @@ server or telemetry.
 The screenshot is from an automated browser test with an intercepted AI response.
 It demonstrates the interface, not live model quality.
 
+The reading workspace keeps your source beside the tools, with light and dark
+themes and a compact popup. Use **Study guide** or **Quiz me** in Chat to start
+learning. Navigate task tabs with Left/Right, Home, and End; Tab moves into the
+selected panel. Summary length works with native radio-keyboard controls.
+See the [interface decisions and verification](docs/product/INTERFACE.md).
+
 ## Start here
 
 ```bash
@@ -37,7 +43,7 @@ dependencies. It is currently installed unpacked, not published in the Web Store
 
 | Action                 | Behavior                                                                                                                                                      |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Summary                | Key points, TL;DR, executive, or technical; four lengths. Matching saved results are reused without another provider call.                                    |
+| Summary                | Key points, TL;DR, executive, or technical; three lengths. Matching saved results are reused without another provider call.                                   |
 | Chat and study prompts | Search passages across the extracted document, send up to six passages to the model, and show their source labels and excerpts.                               |
 | Remember this document | Restore the latest summary and up to 30 completed exchanges for the same URL and unchanged text. **Clear this chat** deletes that document's saved exchanges. |
 | Import text            | Workspace accepts `.txt`/`.md`, up to 2,000,000 characters and 8 MB. Reimporting the same filename and text restores its thread.                              |
@@ -103,6 +109,9 @@ Options apply immediately: disabling context menus removes the right-click
 actions; the keyboard shortcut remains available. Disabling notifications
 suppresses desktop notices, including errors and shortcut results. Popup and
 workspace results remain visible. See the [preference fix](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/31).
+
+A failed settings read can bypass desktop-notification opt-out. This remaining
+failure-path bug is tracked in [#38](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/38).
 
 ## Troubleshooting
 
