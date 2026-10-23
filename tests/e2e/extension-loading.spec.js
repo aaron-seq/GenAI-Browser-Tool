@@ -4,7 +4,7 @@ import {
   FIXTURE_URL,
   CONFIGURED_PREFERENCES,
   seedPreferences,
-  activeTabId
+  activeTabId,
 } from './fixtures.js';
 
 /**
@@ -28,19 +28,24 @@ async function stubProvider(context, text) {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ content: [{ type: 'text', text }] })
+      body: JSON.stringify({ content: [{ type: 'text', text }] }),
     })
   );
 }
 
 test.describe('extension loads', () => {
-  test('registers a service worker with a valid manifest', async ({ extensionId }) => {
+  test('registers a service worker with a valid manifest', async ({
+    extensionId,
+  }) => {
     // A manifest error means Chrome never registers the worker, so simply
     // resolving an extension id proves the manifest parsed and loaded.
     expect(extensionId).toMatch(/^[a-z]{32}$/);
   });
 
-  test('background service worker starts without throwing', async ({ context, extensionId }) => {
+  test('background service worker starts without throwing', async ({
+    context,
+    extensionId,
+  }) => {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -55,7 +60,7 @@ test.describe('extension loads', () => {
 test.describe('options page', () => {
   test('renders without the TypeError that used to break it on load', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     const page = await context.newPage();
     const errors = [];
@@ -70,7 +75,7 @@ test.describe('options page', () => {
 
   test('persists an API key to the same place the background service reads', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/options.html`);
@@ -89,7 +94,10 @@ test.describe('options page', () => {
     expect(stored.apiKeys.anthropic).toBe('sk-ant-typed-by-user');
 
     const status = await page.evaluate(() =>
-      chrome.runtime.sendMessage({ actionType: 'GET_PROVIDER_STATUS', payload: {} })
+      chrome.runtime.sendMessage({
+        actionType: 'GET_PROVIDER_STATUS',
+        payload: {},
+      })
     );
     expect(status).toMatchObject({ success: true, data: { configured: true } });
   });
@@ -98,7 +106,7 @@ test.describe('options page', () => {
 test.describe('content extraction', () => {
   test('content script extracts article text and drops navigation chrome', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     const contentPage = await context.newPage();
     await contentPage.goto(FIXTURE_URL);
@@ -112,7 +120,7 @@ test.describe('content extraction', () => {
       id =>
         chrome.runtime.sendMessage({
           actionType: 'EXTRACT_PAGE_CONTENT',
-          payload: { tabId: id }
+          payload: { tabId: id },
         }),
       tabId
     );
@@ -128,7 +136,7 @@ test.describe('content extraction', () => {
 
   test('EXTRACT_PAGE_CONTENT honours the caller-supplied tabId', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     // Regression: the handler read sender.tab?.id, which is undefined for
     // messages sent from an extension page, so every popup-initiated extraction
@@ -145,7 +153,7 @@ test.describe('content extraction', () => {
       id =>
         chrome.runtime.sendMessage({
           actionType: 'EXTRACT_PAGE_CONTENT',
-          payload: { tabId: id }
+          payload: { tabId: id },
         }),
       tabId
     );
@@ -165,7 +173,7 @@ test.describe('summarization end to end', () => {
    */
   test('extracted page text reaches the provider and the reply comes back', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     /** @type {string[]} */
     const requestBodies = [];
@@ -176,9 +184,9 @@ test.describe('summarization end to end', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           content: [
-            { type: 'text', text: '- Service workers have no DOM access' }
-          ]
-        })
+            { type: 'text', text: '- Service workers have no DOM access' },
+          ],
+        }),
       });
     });
 
@@ -195,7 +203,7 @@ test.describe('summarization end to end', () => {
       id =>
         chrome.runtime.sendMessage({
           actionType: 'EXTRACT_PAGE_CONTENT',
-          payload: { tabId: id }
+          payload: { tabId: id },
         }),
       tabId
     );
@@ -205,13 +213,19 @@ test.describe('summarization end to end', () => {
       text =>
         chrome.runtime.sendMessage({
           actionType: 'GENERATE_CONTENT_SUMMARY',
-          payload: { content: text, summaryType: 'key-points', targetLength: 'medium' }
+          payload: {
+            content: text,
+            summaryType: 'key-points',
+            targetLength: 'medium',
+          },
         }),
       extracted.data.mainText
     );
 
     expect(summary.success).toBe(true);
-    expect(summary.data.summary).toContain('Service workers have no DOM access');
+    expect(summary.data.summary).toContain(
+      'Service workers have no DOM access'
+    );
     expect(summary.data.provider).toBe('anthropic');
 
     // The real page text was sent, fenced as untrusted data.
@@ -222,7 +236,7 @@ test.describe('summarization end to end', () => {
 
   test('a page too long for one request is summarized in sections', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     let callCount = 0;
     await context.route('https://api.anthropic.com/**', route => {
@@ -230,7 +244,9 @@ test.describe('summarization end to end', () => {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ content: [{ type: 'text', text: '- a point' }] })
+        body: JSON.stringify({
+          content: [{ type: 'text', text: '- a point' }],
+        }),
       });
     });
 
@@ -248,7 +264,7 @@ test.describe('summarization end to end', () => {
       content =>
         chrome.runtime.sendMessage({
           actionType: 'GENERATE_CONTENT_SUMMARY',
-          payload: { content }
+          payload: { content },
         }),
       longPage
     );
@@ -262,7 +278,7 @@ test.describe('summarization end to end', () => {
 
   test('recovers from a transient rate limit instead of losing the work', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     // Chunking turned one request into up to nine; without retries a single
     // transient 429 would discard every section that already succeeded.
@@ -273,13 +289,15 @@ test.describe('summarization end to end', () => {
         return route.fulfill({
           status: 429,
           contentType: 'application/json',
-          body: JSON.stringify({ error: { message: 'slow down' } })
+          body: JSON.stringify({ error: { message: 'slow down' } }),
         });
       }
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ content: [{ type: 'text', text: '- recovered' }] })
+        body: JSON.stringify({
+          content: [{ type: 'text', text: '- recovered' }],
+        }),
       });
     });
 
@@ -290,7 +308,7 @@ test.describe('summarization end to end', () => {
     const response = await popup.evaluate(() =>
       chrome.runtime.sendMessage({
         actionType: 'GENERATE_CONTENT_SUMMARY',
-        payload: { content: 'An article worth summarizing.' }
+        payload: { content: 'An article worth summarizing.' },
       })
     );
 
@@ -299,7 +317,10 @@ test.describe('summarization end to end', () => {
     expect(calls).toBe(2);
   });
 
-  test('a right-click page summary notifies the user', async ({ context, extensionId }) => {
+  test('the sentiment message returns parsed fields through the worker', async ({
+    context,
+    extensionId,
+  }) => {
     await stubProvider(context, '- Service workers have no DOM access');
 
     const contentPage = await context.newPage();
@@ -312,7 +333,7 @@ test.describe('summarization end to end', () => {
     const result = await popup.evaluate(() =>
       chrome.runtime.sendMessage({
         actionType: 'ANALYZE_SENTIMENT',
-        payload: { text: 'A clear, well written article.' }
+        payload: { text: 'A clear, well written article.' },
       })
     );
 
@@ -324,7 +345,7 @@ test.describe('summarization end to end', () => {
 
   test('reports a missing API key instead of inventing a summary', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     const contentPage = await context.newPage();
     await contentPage.goto(FIXTURE_URL);
@@ -335,7 +356,7 @@ test.describe('summarization end to end', () => {
     const response = await popup.evaluate(() =>
       chrome.runtime.sendMessage({
         actionType: 'GENERATE_CONTENT_SUMMARY',
-        payload: { content: 'Some article text.' }
+        payload: { content: 'Some article text.' },
       })
     );
 
@@ -345,13 +366,13 @@ test.describe('summarization end to end', () => {
 
   test('surfaces a provider error rather than a plausible fake answer', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     await context.route('https://api.anthropic.com/**', route =>
       route.fulfill({
         status: 401,
         contentType: 'application/json',
-        body: JSON.stringify({ error: { message: 'invalid x-api-key' } })
+        body: JSON.stringify({ error: { message: 'invalid x-api-key' } }),
       })
     );
 
@@ -362,7 +383,7 @@ test.describe('summarization end to end', () => {
     const response = await popup.evaluate(() =>
       chrome.runtime.sendMessage({
         actionType: 'GENERATE_CONTENT_SUMMARY',
-        payload: { content: 'Some article text.' }
+        payload: { content: 'Some article text.' },
       })
     );
 
@@ -375,7 +396,7 @@ test.describe('summarization end to end', () => {
 test.describe('restricted pages', () => {
   test('explains why a page with no content script cannot be read', async ({
     context,
-    extensionId
+    extensionId,
   }) => {
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
@@ -392,7 +413,7 @@ test.describe('restricted pages', () => {
       id =>
         chrome.runtime.sendMessage({
           actionType: 'EXTRACT_PAGE_CONTENT',
-          payload: { tabId: id }
+          payload: { tabId: id },
         }),
       tabId
     );

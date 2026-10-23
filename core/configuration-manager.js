@@ -8,7 +8,12 @@
  * user entered was never found. One shape, one reader, one writer.
  */
 
-import { PROVIDERS, PROVIDER_IDS, AIClient } from '../providers/ai-client.js';
+import {
+  PROVIDERS,
+  PROVIDER_IDS,
+  AIClient,
+  AIError,
+} from '../providers/ai-client.js';
 
 const STORAGE_KEY = 'user_preferences';
 
@@ -56,7 +61,9 @@ export class ConfigurationManager {
 
   /**
    * Read settings, merged over defaults so a preferences object written by an
-   * older version never leaves a field undefined for a caller.
+   * older version never leaves a field undefined for a caller. A failed read is
+   * not a missing record: callers must not authorize side effects or write
+   * replacement settings using defaults when the saved choices are unknown.
    *
    * @returns {Promise<any>}
    */
@@ -64,9 +71,11 @@ export class ConfigurationManager {
     try {
       const result = await chrome.storage.sync.get([STORAGE_KEY]);
       return this.withDefaults(result[STORAGE_KEY]);
-    } catch (error) {
-      console.error('Failed to read user preferences:', error);
-      return { ...this.defaultSettings };
+    } catch {
+      throw new AIError(
+        'SETTINGS_UNAVAILABLE',
+        'Saved settings are unavailable. Try again.'
+      );
     }
   }
 

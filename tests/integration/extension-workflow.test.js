@@ -69,6 +69,7 @@ describe('Extension workflow', () => {
     vi.clearAllMocks();
     chrome.storage.sync.get.mockResolvedValue(CONFIGURED);
     chrome.storage.local.get.mockResolvedValue({});
+    chrome.storage.local.set.mockReset().mockResolvedValue(undefined);
 
     await import('../../background.js');
     await vi.waitFor(() => {
@@ -800,6 +801,133 @@ describe('Extension workflow', () => {
     );
   });
 
+  describe('settings read failures (#38)', () => {
+    beforeEach(async () => {
+      await vi.waitFor(() =>
+        expect(chrome.contextMenus.create).toHaveBeenCalledTimes(7)
+      );
+      chrome.notifications.create.mockClear();
+      chrome.storage.sync.get.mockResolvedValue({
+        user_preferences: {
+          ...CONFIGURED.user_preferences,
+          features: {
+            contextMenus: true,
+            notifications: false,
+            saveHistory: false,
+          },
+        },
+      });
+    });
+
+    it.each([
+      ['menu', 'success'],
+      ['menu', 'error'],
+      ['shortcut', 'success'],
+      ['shortcut', 'error'],
+    ])(
+      'suppresses %s %s delivery when settings cannot be read',
+      async (entry, outcome) => {
+        global.fetch.mockImplementationOnce(async () => {
+          chrome.storage.sync.get.mockRejectedValueOnce(
+            new Error('storage unavailable')
+          );
+          return outcome === 'success'
+            ? CLAUDE_REPLY
+            : {
+                ...okResponse({ error: { message: 'Invalid API key' } }),
+                ok: false,
+                status: 401,
+              };
+        });
+        if (entry === 'shortcut') {
+          chrome.tabs.query.mockResolvedValueOnce([{ id: 42 }]);
+          chrome.tabs.sendMessage.mockResolvedValueOnce({
+            success: true,
+            data: { mainText: 'Fixture document' },
+          });
+          await chrome.commands.onCommand.addListener.mock.calls[0][0](
+            'quick-summarize'
+          );
+        } else {
+          await chrome.contextMenus.onClicked.addListener.mock.calls[0][0](
+            {
+              menuItemId: 'genai-summarize-selection',
+              selectionText: 'Fixture document',
+            },
+            { id: 1 }
+          );
+        }
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(chrome.notifications.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it('makes no provider call or notification during a continuing read failure', async () => {
+      chrome.storage.sync.get.mockRejectedValue(
+        new Error('storage unavailable')
+      );
+      await expect(
+        chrome.contextMenus.onClicked.addListener.mock.calls[0][0](
+          { menuItemId: 'genai-summarize-page' },
+          { id: 1 }
+        )
+      ).resolves.toBeUndefined();
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(chrome.notifications.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['summary', 'answer'])(
+      'keeps the generated %s without saving history after a settings read failure',
+      async task => {
+        global.fetch.mockImplementationOnce(async () => {
+          chrome.storage.sync.get.mockRejectedValueOnce(
+            new Error('storage unavailable')
+          );
+          return CLAUDE_REPLY;
+        });
+        const result = await dispatch(
+          task === 'summary'
+            ? 'GENERATE_CONTENT_SUMMARY'
+            : 'ANSWER_CONTEXTUAL_QUESTION',
+          {
+            content: 'Fixture document',
+            context: 'Fixture document',
+            question: 'What is this about?',
+          }
+        );
+        expect(result.success).toBe(true);
+        expect(
+          result.data[task === 'summary' ? 'summary' : 'answer']
+        ).toContain('point one');
+        expect(result.data.historyWarning).toContain('Could not save');
+        expect(chrome.storage.local.set).not.toHaveBeenCalled();
+      }
+    );
+
+    it('returns an actionable failure without changing settings or reading local history', async () => {
+      chrome.storage.sync.get.mockRejectedValue(
+        new Error('storage unavailable')
+      );
+      for (const action of [
+        'UPDATE_USER_PREFERENCES',
+        'GET_DOCUMENT_HISTORY',
+      ]) {
+        const response = await dispatch(action, {
+          theme: 'dark',
+          content: 'Fixture document',
+        });
+        expect(response).toMatchObject({
+          success: false,
+          errorCode: 'SETTINGS_UNAVAILABLE',
+        });
+        expect(response.data).toBeUndefined();
+      }
+      expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+      expect(chrome.storage.local.get).not.toHaveBeenCalled();
+    });
+  });
+
   describe('keyboard commands', () => {
     it('summarizes the active tab for quick-summarize', async () => {
       chrome.tabs.query.mockResolvedValueOnce([{ id: 42 }]);
@@ -850,6 +978,46 @@ describe('Extension workflow', () => {
   });
 
   describe('worker lifecycle', () => {
+    it.each(['install', 'update'])(
+      'handles unavailable settings during %s without skipping first-install options',
+      async reason => {
+        const installHandler =
+          chrome.runtime.onInstalled.addListener.mock.calls[0][0];
+        const errorLog = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+        chrome.storage.sync.get.mockRejectedValueOnce(
+          new Error('fixture-private-storage-detail')
+        );
+        chrome.contextMenus.create.mockClear();
+
+        try {
+          await expect(installHandler({ reason })).resolves.toBeUndefined();
+
+          expect(chrome.runtime.openOptionsPage).toHaveBeenCalledTimes(
+            reason === 'install' ? 1 : 0
+          );
+          expect(chrome.contextMenus.create).not.toHaveBeenCalled();
+          expect(chrome.notifications.create).not.toHaveBeenCalled();
+          expect(global.fetch).not.toHaveBeenCalled();
+          expect(errorLog).toHaveBeenCalledWith(
+            expect.stringContaining(
+              'Menu initialization failed during installation'
+            ),
+            ''
+          );
+          expect(JSON.stringify(errorLog.mock.calls)).not.toContain(
+            'fixture-private-storage-detail'
+          );
+
+          await installHandler({ reason: 'update' });
+          expect(chrome.contextMenus.create).toHaveBeenCalledTimes(7);
+        } finally {
+          errorLog.mockRestore();
+        }
+      }
+    );
+
     it.each(['install', 'update'])(
       'opens options only on first install (%s)',
       async reason => {
