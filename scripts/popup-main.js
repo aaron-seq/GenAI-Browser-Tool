@@ -90,6 +90,26 @@ class PopupInterface {
           .tab;
         if (tab) this.switchToTab(tab);
       });
+      button.addEventListener('keydown', event => {
+        const e = /** @type {KeyboardEvent} */ (event);
+        const tabs = Array.from(document.querySelectorAll('.tab-button'));
+        const current = tabs.indexOf(button);
+        const next =
+          e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? tabs.length - 1
+              : e.key === 'ArrowRight'
+                ? (current + 1) % tabs.length
+                : e.key === 'ArrowLeft'
+                  ? (current + tabs.length - 1) % tabs.length
+                  : -1;
+        if (next < 0) return;
+        e.preventDefault();
+        const target = /** @type {HTMLElement} */ (tabs[next]);
+        if (target.dataset.tab) this.switchToTab(target.dataset.tab);
+        target.focus();
+      });
     });
 
     on('settings-btn', 'click', () => chrome.runtime.openOptionsPage());
@@ -116,7 +136,9 @@ class PopupInterface {
       chip.addEventListener('click', event => {
         setValue(
           'chat-input',
-          /** @type {HTMLElement} */ (event.target).textContent || ''
+          /** @type {HTMLElement} */ (event.currentTarget).dataset.prompt ||
+            /** @type {HTMLElement} */ (event.currentTarget).textContent ||
+            ''
         );
         this.sendChatMessage();
       });
@@ -146,14 +168,18 @@ class PopupInterface {
 
   /** @param {string} tabName */
   switchToTab(tabName) {
-    document
-      .querySelectorAll('.tab-button.active, .tab-pane.active')
-      .forEach(el => el.classList.remove('active'));
-    document
-      .querySelector(`.tab-button[data-tab="${tabName}"]`)
-      ?.classList.add('active');
-    document.getElementById(`${tabName}-tab`)?.classList.add('active');
-    if (tabName === 'chat') document.getElementById('chat-input')?.focus();
+    document.querySelectorAll('.tab-button').forEach(button => {
+      const tab = /** @type {HTMLElement} */ (button);
+      const selected = tab.dataset.tab === tabName;
+      tab.classList.toggle('active', selected);
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      const panel = document.getElementById(`${tab.dataset.tab}-tab`);
+      if (panel) {
+        panel.classList.toggle('active', selected);
+        panel.hidden = !selected;
+      }
+    });
   }
 
   // ------------------------------------------------------------------ content
@@ -199,6 +225,7 @@ class PopupInterface {
     this.warnedAboutChatTruncation = false;
     if (content.url?.startsWith('local-document:')) this.sourceTabId = null;
     hide('summary-results');
+    show('summary-empty', 'flex');
     hide('translation-results');
     hide('tools-results');
     document.querySelectorAll('.analysis-result').forEach(result => {
@@ -335,6 +362,7 @@ class PopupInterface {
       `${cached ? 'Saved summary · ' : ''}${describeCoverage(data)}`
     );
     show('summary-results');
+    hide('summary-empty');
     if (data.historyWarning) {
       setText('summary-confidence', `${describeCoverage(data)} · Not saved`);
       this.showToast(data.historyWarning, 'warning');
@@ -623,7 +651,7 @@ class PopupInterface {
 
     const avatar = document.createElement('div');
     avatar.className = `${role}-avatar`;
-    avatar.textContent = role === 'user' ? '👤' : '🤖';
+    avatar.textContent = role === 'user' ? 'You' : 'GenAI';
 
     const body = document.createElement('div');
     body.className = 'message-content';
@@ -639,6 +667,9 @@ class PopupInterface {
     if (!Array.isArray(sources) || !sources.length) return;
     const details = document.createElement('details');
     details.className = 'chat-sources';
+    details.addEventListener('toggle', () => {
+      if (details.open) details.scrollIntoView?.({ block: 'nearest' });
+    });
     const summary = document.createElement('summary');
     summary.textContent = retrieval
       ? `${sources.length} of ${retrieval.total} passages used · ${retrieval.mode === 'overview' ? 'representative overview' : 'matched to your question'}`
@@ -703,10 +734,12 @@ class PopupInterface {
   /** @param {string} message */
   showLoading(message) {
     setText('loading-text', message);
+    document.getElementById('main-content')?.setAttribute('aria-busy', 'true');
     show('loading-overlay', 'flex');
   }
 
   hideLoading() {
+    document.getElementById('main-content')?.setAttribute('aria-busy', 'false');
     hide('loading-overlay');
   }
 }

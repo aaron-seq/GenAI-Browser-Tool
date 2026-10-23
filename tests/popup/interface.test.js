@@ -378,6 +378,7 @@ describe('popup', () => {
       await vi.waitFor(() =>
         expect(text('current-page-title')).toBe('new.txt')
       );
+      expect(el('summary-empty').style.display).toBe('flex');
       expect(el('translation-results').style.display).toBe('none');
       expect(text('insights-result')).not.toContain('old article');
       el('extract-links-btn').click();
@@ -543,6 +544,7 @@ describe('popup', () => {
         expect(el('summary-results').style.display).toBe('block')
       );
       expect(el('summary-content').innerHTML).toContain('<li>point one</li>');
+      expect(el('summary-empty').style.display).toBe('none');
       expect(text('summary-provider')).toBe('anthropic · claude-opus-5');
       expect(text('summary-confidence')).toBe(
         'Whole page, summarized across 3 sections'
