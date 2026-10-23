@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve saved choices when settings reads fail: suppress optional notices and
+  history, reject replacement updates, keep generated output visible, and show
+  recoverable Settings/reset failures (#38).
 - Apply context-menu and desktop-notification preferences in the worker, including
   settings changes, stale clicks, and opt-out during an in-flight request (#31).
 - Patch Vitest and matching coverage packages to 4.1.12 and Vite to 8.2.4 for

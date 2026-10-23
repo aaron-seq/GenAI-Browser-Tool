@@ -1,6 +1,6 @@
 # Reading and learning workspace
 
-Updated 20 October 2026 for version 5.3.0. This is the maintained product brief;
+Updated 23 October 2026 for version 5.3.0. This is the maintained product brief;
 the [supplied engineering brief](ENGINEERING-BRIEF.md) is preserved separately.
 
 ## Objective
@@ -38,6 +38,18 @@ from [Perplexity Comet's documented experience](https://www.perplexity.ai/comet/
 This comparison is based on its documentation, not a hands-on latency or quality test.
 
 ## Next steps and material gaps
+
+The current [settings-failure milestone](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/1)
+protects saved privacy choices and recovery without adding a backend or permission.
+Its implementation is awaiting review; see the [checkpoint](PROJECT-STATUS.md)
+and [verification record](../security-testing-evidence.md). The separate
+[reading-interface draft #39](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/39)
+also awaits review. The [private dashboard](https://github.com/users/aaron-seq/projects/6)
+tracks both without counting an issue and its PR as separate outcomes.
+
+Next verification work: [native menu/shortcut entry points (#40)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/40),
+[repository scanning (#41)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/41),
+then [CI modernization (#32)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/32).
 
 | Work                                                                                          | Completion condition                                                                                                          |
 | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
