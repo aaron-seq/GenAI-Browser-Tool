@@ -2,12 +2,14 @@
 
 24 October 2026. [Issue #32](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/32) ·
 [milestone 2](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/2).
-Branch `codex/issue-32-ci-modernization` is stacked on
+Branch `codex/issue-32-ci-modernization` was prepared on
 [PR #42](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/42) at
 `8f0bddeb53f28dfc1f8f69d05b12c8620a881c60`. The application code is unchanged
 relative to that baseline; the separate UI draft #39 is outside this validation.
+PR #42 merged into main at `f0c71db938dfd551dc9797afdb756e734ca7655c`;
+[PR #43](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/43) now targets main.
 Workflow change: [`0058986`](https://github.com/aaron-seq/GenAI-Browser-Tool/commit/0058986094ee8bf537faf22dc9ae5ecd3d9f24b9).
-The final head, inspected CI run and artifact result are maintained on #32.
+The final head, merge state, inspected CI runs and artifact results are maintained on #32.
 
 ## Decision, scope and risk
 
@@ -49,7 +51,7 @@ from each action's execution runtime and does not claim upstream Node support.
 
 Rollback: revert this workflow/docs change on the feature branch and rerun CI;
 that restores previous action/runner notices. No application migration is needed.
-Retarget to main and rerun CI when PR #42 lands. The ancestry guard is independent
+CI is rerun against main after retargeting. The ancestry guard is independent
 of the verify job, so it does not itself block packaging; required-check policy
 is a repository setting and was not changed.
 

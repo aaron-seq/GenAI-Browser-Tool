@@ -41,13 +41,15 @@ This comparison is based on its documentation, not a hands-on latency or quality
 
 The [settings-failure milestone](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/1)
 protects saved privacy choices and recovery without adding a backend or permission.
-Its implementation is awaiting review; see the [checkpoint](PROJECT-STATUS.md)
+Its implementation merged through [PR #42](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/42);
+see the [checkpoint](PROJECT-STATUS.md)
 and [verification record](../security-testing-evidence.md). The separate
 [reading-interface draft #39](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/39)
 also awaits review. The [private dashboard](https://github.com/users/aaron-seq/projects/6)
 tracks both without counting an issue and its PR as separate outcomes.
 
-Current engineering delivery: [CI action and runner validation (#32)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/32),
+CI action and runner validation is delivered through
+[PR #43 / issue #32](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/32),
 under [milestone 2](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/2).
 It exercises the privacy fix with updated CI actions; application behavior and
 runtime dependencies are unchanged by that milestone.
