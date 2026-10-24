@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pin verified current CI action releases, select Ubuntu 26.04 explicitly, and
+  avoid retaining checkout credentials while preserving the Node test matrix (#32).
 - Preserve saved choices when settings reads fail: suppress optional notices and
   history, reject replacement updates, keep generated output visible, and show
   recoverable Settings/reset failures (#38).

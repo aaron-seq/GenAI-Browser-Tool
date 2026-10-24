@@ -219,6 +219,15 @@ live provider credentials, model availability, or output quality.
 CI runs lint, typechecking, and coverage on Node 20/22/24; Node 22 also runs the
 dependency audit. Browser tests run before the package job.
 
+The workflow selects `ubuntu-26.04` explicitly and pins action release commits.
+Action runtimes are separate from the Node versions tested by the project.
+Checkout credentials are not retained after checkout; the ancestry guard uses
+the full fetched history. npm caching uses `package-lock.json` explicitly, and
+the dependency-free guard disables automatic package-manager caching.
+See [migration decisions and validation](ci-modernization-evidence.md) before
+updating these pins. Codecov remains optional; a green job alone does not prove
+that coverage reached the service.
+
 The PR-base job rejects a non-default base branch already contained in the default
 branch. Retarget the PR at the default branch when this fails. The check runs on
 opening, reopening, head updates, and edits (including retargeting). It checks Git
