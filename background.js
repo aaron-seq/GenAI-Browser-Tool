@@ -359,21 +359,18 @@ class BackgroundService {
         outputLength: result.text.length,
       },
     };
-    let historyWarning = '';
-    if ((await this.configManager.getUserPreferences()).features.saveHistory) {
-      historyWarning = await this.recordHistory(() =>
-        this.storageService.saveSummaryHistory({
-          ...summary,
-          originalContent: content.slice(0, 500),
-          options: { type: payload.summaryType, length: payload.targetLength },
-          url: payload.url || '',
-          title: payload.title || '',
-          documentKey: identity,
-          cacheKey,
-          timestamp: Date.now(),
-        })
-      );
-    }
+    const historyWarning = await this.recordHistory(() =>
+      this.storageService.saveSummaryHistory({
+        ...summary,
+        originalContent: content.slice(0, 500),
+        options: { type: payload.summaryType, length: payload.targetLength },
+        url: payload.url || '',
+        title: payload.title || '',
+        documentKey: identity,
+        cacheKey,
+        timestamp: Date.now(),
+      })
+    );
     return { ...summary, text: summary.summary, cached: false, historyWarning };
   }
 
@@ -385,6 +382,8 @@ class BackgroundService {
    */
   async recordHistory(save) {
     try {
+      if (!(await this.configManager.getUserPreferences()).features.saveHistory)
+        return '';
       await save();
       return '';
     } catch (error) {
@@ -483,26 +482,23 @@ class BackgroundService {
       content: retrieved.context,
       sourceContext: true,
     });
-    const settings = await this.configManager.getUserPreferences();
-    const historyWarning = settings.features.saveHistory
-      ? await this.recordHistory(() =>
-          this.storageService.updateConversationHistory({
-            question: payload.question,
-            answer: result.text,
-            context: context.slice(0, 200),
-            documentKey: identity,
-            url: payload.url || '',
-            title: payload.title || '',
-            sources: retrieved.sources.map(({ id, start, end, excerpt }) => ({
-              id,
-              start,
-              end,
-              text: excerpt,
-            })),
-            timestamp: Date.now(),
-          })
-        )
-      : '';
+    const historyWarning = await this.recordHistory(() =>
+      this.storageService.updateConversationHistory({
+        question: payload.question,
+        answer: result.text,
+        context: context.slice(0, 200),
+        documentKey: identity,
+        url: payload.url || '',
+        title: payload.title || '',
+        sources: retrieved.sources.map(({ id, start, end, excerpt }) => ({
+          id,
+          start,
+          end,
+          text: excerpt,
+        })),
+        timestamp: Date.now(),
+      })
+    );
 
     return {
       ...result,
@@ -702,9 +698,7 @@ class BackgroundService {
         targetLanguage: settings.targetLanguage,
       });
 
-      if (
-        (await this.configManager.getUserPreferences()).features.notifications
-      )
+      if (await this.notificationsEnabled())
         this.notificationManager.showSuccess(
           entry.title,
           truncateForNotification(result.text)
@@ -713,10 +707,21 @@ class BackgroundService {
       /** @type {any} */
       const err = error;
       this.logger.error('Context menu action failed', err.message);
-      if (
-        (await this.configManager.getUserPreferences()).features.notifications
-      )
+      if (await this.notificationsEnabled())
         this.notificationManager.showError(err.message);
+    }
+  }
+
+  /** A desktop delivery requires a successful read of the current opt-in. */
+  async notificationsEnabled() {
+    try {
+      return (
+        (await this.configManager.getUserPreferences()).features
+          .notifications === true
+      );
+    } catch {
+      this.logger.warn('Notification skipped: settings unavailable');
+      return false;
     }
   }
 
@@ -739,7 +744,11 @@ class BackgroundService {
 
   /** @param {chrome.runtime.InstalledDetails} details */
   async handleInstalled(details) {
-    await this.createContextMenus();
+    try {
+      await this.createContextMenus();
+    } catch {
+      this.logger.error('Menu initialization failed during installation');
+    }
     if (details.reason === 'install') {
       chrome.runtime.openOptionsPage();
     }

@@ -125,6 +125,10 @@ browser profile is compromised.
 
 ### Data handling
 
+- A failed settings read is distinct from an absent record. Optional desktop
+  delivery and history writes require readable preferences; updates do not replace
+  unknown saved choices with defaults. Generated results remain visible if the
+  final history check fails. See [the bounded assessment and tests](security-testing-evidence.md).
 - Page text is sent to the provider you configured, and to nobody else. There is
   no backend and no analytics.
 - With Save history enabled, summaries and completed chat exchanges, including

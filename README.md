@@ -104,6 +104,11 @@ actions; the keyboard shortcut remains available. Disabling notifications
 suppresses desktop notices, including errors and shortcut results. Popup and
 workspace results remain visible. See the [preference fix](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/31).
 
+If saved settings cannot be read, the extension reports the failure instead of
+replacing your choices with defaults. It suppresses desktop notices and optional
+history writes. A result already generated stays visible with a save warning;
+copy it before closing. If Settings cannot load, reload that page to retry.
+
 ## Troubleshooting
 
 | Symptom                             | Next step                                                                                                                           |
@@ -137,4 +142,7 @@ behavior, and next steps. Supporting research and verification are in
 in [ENGINEERING-BRIEF.md](docs/product/ENGINEERING-BRIEF.md).
 
 Issues: [GitHub](https://github.com/aaron-seq/GenAI-Browser-Tool/issues).
+Current work: [GitHub dashboard](https://github.com/users/aaron-seq/projects/6)
+(owner access), [continuation checkpoint](docs/product/PROJECT-STATUS.md), and
+[settings-failure evidence](docs/security-testing-evidence.md).
 License: [MIT](LICENSE).

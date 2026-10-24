@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 /**
  * The options page is the only writer of `user_preferences`. What matters is
@@ -81,6 +82,25 @@ async function loadPage(stored = {}) {
 }
 
 describe('options page', () => {
+  it('blocks editing and reset with a persistent error when saved settings cannot load', async () => {
+    document.body.innerHTML = readFileSync('options.html', 'utf8')
+      .match(/<body[^>]*>([\s\S]*)<\/body>/)[1]
+      .replace(/<script[\s\S]*?<\/script>/g, '');
+    chrome.storage.sync.get.mockRejectedValue(new Error('storage unavailable'));
+    vi.resetModules();
+    await import('../../options.js');
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+        'Reload'
+      )
+    );
+    for (const control of document.querySelectorAll('input, select, button'))
+      expect(control.disabled).toBe(true);
+    expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+  });
+
   it.each([
     [
       'success',
@@ -317,6 +337,34 @@ describe('options page', () => {
       );
       expect(lastSaved().apiKeys).toEqual({});
       expect(lastSaved().preferredProvider).toBe('anthropic');
+    });
+
+    it('finishes a confirmed reset even if subsequent reads are unavailable', async () => {
+      confirm.mockReturnValue(true);
+      chrome.storage.sync.get.mockRejectedValue(
+        new Error('storage unavailable')
+      );
+      document.getElementById('reset-settings').click();
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('#save-indicator .text').textContent
+        ).toBe('Settings reset to defaults')
+      );
+      expect(document.getElementById('openai-key').value).toBe('');
+    });
+
+    it('reports a failed reset without replacing the displayed saved key', async () => {
+      confirm.mockReturnValue(true);
+      chrome.storage.sync.set.mockRejectedValueOnce(
+        new Error('storage unavailable')
+      );
+      document.getElementById('reset-settings').click();
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('#save-indicator .text').textContent
+        ).toContain('Could not reset')
+      );
+      expect(document.getElementById('openai-key').value).toBe('sk-stored');
     });
   });
 
