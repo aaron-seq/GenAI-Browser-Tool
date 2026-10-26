@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Replace fictional contribution examples, consolidate setup and validation
+  guidance, and exclude development configs from the npm package (#35).
 - Pin verified current CI action releases, select Ubuntu 26.04 explicitly, and
   avoid retaining checkout credentials while preserving the Node test matrix (#32).
 - Preserve saved choices when settings reads fail: suppress optional notices and

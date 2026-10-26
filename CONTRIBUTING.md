@@ -1,332 +1,113 @@
 # Contributing to GenAI Browser Tool
 
-<div align="center">
-
-![Contributors Welcome](https://img.shields.io/badge/contributors-welcome-brightgreen.svg)
-![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
-![Good First Issue](https://img.shields.io/badge/-good%20first%20issue-blueviolet)
-
-[Quick Start](#quick-start) • [Dev Setup](#development-setup) • [Commit Rules](#commit-guidelines) • [Code Style](#code-style-guidelines) • [Testing](#testing-requirements) • [PR Process](#pull-request-workflow)
-
-</div>
-
-## Table of Contents
-
-<details>
-<summary>Expand</summary>
-
-- [Quick Start](#quick-start)
-- [Development Setup](#development-setup)
-- [Project Structure](#project-structure)
-- [Branching Model](#branching-model)
-- [Commit Guidelines](#commit-guidelines)
-- [Code Style Guidelines](#code-style-guidelines)
-- [Security & Privacy](#security--privacy)
-- [Testing Requirements](#testing-requirements)
-- [Pull Request Workflow](#pull-request-workflow)
-- [Review Process](#review-process)
-- [Release Process](#release-process)
-- [Issue Triage](#issue-triage)
-- [Community Expectations](#community-expectations)
-
-</details>
-
 ## Quick Start
 
-1. Fork the repo and create your branch from `main`:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/GenAI-Browser-Tool
-   cd GenAI-Browser-Tool
-   git checkout -b feature/awesome-change
-   ```
-2. Install dependencies and prepare hooks:
-   ```bash
-   npm ci
-   npm run prepare
-   ```
-3. Load the unpacked extension from the **project root** at `chrome://extensions`.
-   No build step is needed — the manifest points at the source files.
-4. Write tests, run `npm run verify`, then open a PR.
+Fork the repository, clone your fork, and create a short-lived branch from current
+`main`. The extension loads directly from the repository root; see the
+[installation guide](README.md#start-here).
 
 ## Development Setup
 
-### Prerequisites
+Use Node >=20.19, npm >=10, and Chrome >=116. Run `npm ci` to install
+development tools and prepare Git hooks. Provider keys and model overrides belong
+in the extension's options page, not an `.env` file.
 
-- Node.js >= 20.19, npm >= 10
-- Chrome >= 116 (MV3 service worker modules)
-- Git
-
-### Configuration
-
-There is no `.env` file. Provider selection, API keys, and model overrides all
-live on the extension's options page and are stored in `chrome.storage.sync`.
-
-### Common scripts
-
-```bash
-npm run verify   # lint + typecheck + test — run before every PR
-npm test         # Unit and integration tests (Vitest)
-npm run test:e2e # Playwright E2E
-npm run lint     # ESLint
-npm run typecheck# tsc --noEmit over shipped source (must be zero errors)
-npm run format   # Prettier
-```
-
-There is no build step. The repository root is the loadable extension, and
-packaging is a zip of the root. Requires Node 20.19 or newer.
+[Local validation](docs/DEVELOPMENT.md#local-validation) is the authoritative
+command list. Run `npm run verify` before a PR and the coverage/browser checks
+appropriate to the change. Avoid repository-wide formatting unrelated to your work.
 
 ## Project Structure
 
-```
-GenAI-Browser-Tool/
-├── background.js            # MV3 service worker — message router, all AI calls
-├── content.js               # content script, read-only DOM extraction
-├── popup.html               # popup markup (logic in scripts/popup-main.js)
-├── options.html/.css/.js    # settings UI
-├── core/
-│   ├── configuration-manager.js  # settings + AI client construction
-│   └── tasks.js                  # prompt construction and response parsing
-├── providers/
-│   └── ai-client.js              # one fetch client, shaped per provider
-├── scripts/popup-main.js    # popup logic
-├── services/                # storage, notifications
-├── utils/                   # logger, validation
-├── styles/                  # popup CSS
-├── tests/                   # unit, integration, and e2e tests
-├── docs/                    # DEVELOPMENT.md, SECURITY.md
-└── manifest.json            # MV3 manifest
-```
+See the [source map and message contract](docs/DEVELOPMENT.md#source-map).
+All provider calls go through the worker and `providers/ai-client.js`.
 
-### Adding a provider
-
-Add one entry to `PROVIDERS` in `providers/ai-client.js` (url, headers, body,
-parse), add its host to `host_permissions` in `manifest.json`, and add the key
-and model inputs to `options.html`. Everything else — options wiring, status
-badge, and all seven tasks — picks it up automatically. Add request-shaping
-tests alongside the existing ones in `tests/providers/ai-client.test.js`.
+To add a provider, update `PROVIDERS`, its manifest host permission, and the
+options key/model inputs. Exercise request shaping and response/error handling in
+[the provider tests](tests/providers/ai-client.test.js).
 
 ## Branching Model
 
-Create short-lived feature, fix, documentation, or maintenance branches from
-current `main`, and target the final integration PR at `main`. This repository
-does not use a long-lived `develop` branch. A stacked PR may target an unmerged
-feature branch; retarget it at `main` when its base lands. Branch protection is
-a repository setting, not a guarantee made by this guide.
+Target final integration PRs at `main`; there is no long-lived `develop` branch.
+A stacked PR may target an unmerged feature branch. Retarget when its base lands;
+the [ancestry check](docs/DEVELOPMENT.md#pull-requests-and-packaging) describes
+what CI detects.
 
 ## Commit Guidelines
 
-Follow Conventional Commits. Examples:
-
-```
-feat(provider): add Gemini fallback when OpenAI is rate-limited
-fix(content): sanitize HTML before summarization to avoid XSS
-perf(cache): memoize provider health checks
-docs(readme): add manual install steps for Firefox
-chore(ci): add CodeQL security scan
-```
-
-Rules:
-
-- Imperative mood, max 50 chars subject, no trailing period
-- Optional body wraps at 72 cols; explain motivation, approach, tradeoffs
-- Reference issues: `Closes #123`, `Refs #456`
-- Breaking changes in footer: `BREAKING CHANGE: ...`
+Use Conventional Commits, for example `fix(content): handle empty pages` or
+`docs(readme): clarify unpacked installation`. Keep the subject imperative,
+at most 50 characters, without a trailing period. Wrap an optional body at 72
+columns, explain consequential trade-offs, and link issues. Mark incompatible
+changes with a `BREAKING CHANGE:` footer.
 
 ## Code Style Guidelines
 
-### JavaScript/TypeScript
-
-- Use TypeScript types in new/changed files when possible
-- Prefer pure functions, avoid side effects in providers/services
-- Validate message boundaries and escape rendered output; see [the security guide](docs/SECURITY.md)
-- No direct DOM injection; sanitize with DOMPurify before rendering
-- Avoid long functions (>40 lines). Extract helpers.
-
-Example patterns:
-
-```ts
-// Typed provider request
-export interface AIRequest {
-  kind: 'summary' | 'qa' | 'translate' | 'analyze';
-  text: string;
-  locale?: string;
-}
-export interface AIResponse {
-  content: string;
-  tokens?: number;
-  latencyMs?: number;
-  sources?: string[];
-}
-
-export async function summarize(req: AIRequest): Promise<AIResponse> {
-  if (req.kind !== 'summary') throw new Error('invalid kind');
-  // ... impl
-  return { content: result.text, tokens: result.usage?.total_tokens };
-}
-```
-
-### UI/UX
-
-- Keep popup UI responsive and accessible (ARIA labels, tab order)
-- Respect prefers-color-scheme; ensure contrast and keyboard navigation
-- No blocking operations on UI thread; use async boundaries and spinners
-
-### Security & Privacy
-
-- Do not log API keys or user content
-- Treat `chrome.storage.sync/local` as plaintext; keep API keys out of logs and exports
-- Enforce CSP in manifest; never eval or inline scripts
-- Strip PII before sending to external APIs where feasible
+Follow adjacent JavaScript and JSDoc conventions; ESLint, TypeScript's
+`--noEmit` check, and Prettier are already configured. Prefer cohesive helpers
+and test observable behavior. Keep UI controls keyboard accessible and show
+progress/errors for asynchronous actions.
 
 ## Security & Privacy
 
-All contributions must comply with:
-
-- Manifest V3 policies (no remote code, background service worker)
-- Chrome Web Store / Edge Add-ons policies
-- Minimum-permission principle
-
-Checklist before PR:
-
-- [ ] No secrets in code or history
-- [ ] Inputs validated and sanitized
-- [ ] External requests over HTTPS with proper hosts
-- [ ] Respect user opt-outs and incognito isolation
+Follow the [security policy](docs/SECURITY.md). Validate message boundaries,
+preserve the manifest CSP, and escape untrusted output before adding the fixed
+Markdown subset. Rendering uses a local escaping function, with no DOMPurify.
+Keep API keys out of logs and exports, and user content out of logs; storage is plaintext at the
+API level. Review permissions, provider hosts, and privacy opt-outs when changing
+those paths. Report vulnerabilities privately using the policy's contact.
 
 ## Testing Requirements
 
-CI enforces coverage over all shipped JavaScript: 88% lines, 85% statements,
-85% functions, and 78% branches, plus a 75% branch floor for `background.js`.
-See [vitest.config.js](vitest.config.js). Additional goals:
+Use the existing Vitest and Playwright suites. For example, this case in
+[rendering.test.js](tests/popup/rendering.test.js) exercises the shipped renderer:
 
-- Unit: ≥ 80% lines on changed modules
-- E2E: happy paths for popup, summary, Q&A, translate
-
-Examples:
-
-```ts
-// Vitest unit example
-import { describe, it, expect } from 'vitest';
-import { sanitize } from '@/services/security-manager';
-
-describe('security', () => {
-  it('removes scripts from HTML', () => {
-    expect(sanitize('<img src=x onerror=alert(1)>')).not.toMatch(/onerror/);
-  });
+```js
+it('escapes tags in model output before adding markup', () => {
+  const html = renderMarkdown('<img src=x onerror=alert(1)>');
+  expect(html).not.toContain('<img');
+  expect(html).toContain('&lt;img');
 });
 ```
 
-```ts
-// Playwright e2e snippet
-import { test, expect } from '@playwright/test';
-
-test('popup opens and summarizes page', async ({ page }) => {
-  await page.goto('https://example.com');
-  // open extension UI per your test harness
-  await expect(page.locator('.genai-popup')).toBeVisible();
-  await page.click('#summarize');
-  await expect(page.locator('.summary-result')).toHaveText(/summary/i, {
-    timeout: 10000,
-  });
-});
-```
-
-CI checks must pass: lint, typecheck, unit, e2e (where configured).
+Run that file with `npx vitest run tests/popup/rendering.test.js`.
+For browser tests, reuse the [persistent Chromium fixture](tests/e2e/fixtures.js)
+and [workspace examples](tests/e2e/learning-workspace.spec.js).
+Coverage thresholds live in [vitest.config.js](vitest.config.js);
+[validation limits](docs/DEVELOPMENT.md#local-validation) distinguish intercepted
+provider tests from manual/live checks.
 
 ## Pull Request Workflow
 
-Target `main` for the final integration PR. Stacked PRs can target a feature
-branch while it has unmerged work; CI rejects a base already contained in the
-default branch and asks you to retarget. See
-[the development guide](docs/DEVELOPMENT.md#pull-requests-and-packaging) for the
-check's scope and packaging rules.
-
-Pre‑flight:
-
-- [ ] Lint, typecheck, tests pass locally
-- [ ] Updated README/docs for user‑facing changes
-- [ ] Added/updated tests
-- [ ] Coverage did not regress (`npm run test:coverage` enforces a threshold)
-
-PR Description Template:
-
-```markdown
-## Summary
-
-What changed and why.
-
-## Changes
-
-- ...
-
-## Tests
-
-- Unit:
-- E2E:
-
-## Screenshots
-
-(If UI changed)
-
-## Risks & Rollback
-
-Potential impact and how to revert.
-
-## Related
-
-Closes #123, Refs #456
-```
-
-Labels:
-
-- `bug`, `enhancement`, `documentation`, `dependencies`, `security`, `breaking change`, `good first issue`
+Use the [PR template](.github/pull_request_template.md). Describe the problem,
+linked issue, actual validation, gaps, and material risks. Include screenshots
+when the UI changes. Add regression coverage for behavior changes and update the
+relevant canonical guide.
 
 ## Review Process
 
-For reviewers:
-
-- Focus on correctness, security, privacy, and maintainability
-- Suggest concrete improvements; prefer questions over directives
-- Approve if concerns are addressed even if further polish is possible
-
-For authors:
-
-- Respond to all comments
-- Keep commits clean (squash before merge unless history is valuable)
-- Provide benchmarks when touching performance‑critical paths
+Review correctness, security, privacy, compatibility, and maintainability.
+Support findings with concrete behavior and tight source/test references.
+Authors should address each actionable comment and provide measurements for
+performance claims. Squash before merge unless the commit history is useful.
 
 ## Release Process
 
-We use SemVer and align `manifest.json` version with `package.json`.
-
-Steps:
-
-1. Update versions: `npm version patch|minor|major`
-2. Update CHANGELOG.md
-3. Smoke test: `npm run verify && npm run test:e2e`
-4. Load the repository root unpacked in Chrome and summarize a real page —
-   `activeTab` is granted only on a real toolbar click, which the E2E suite
-   cannot perform
-5. Tag and push: `git push --follow-tags`
-6. Download the ZIP from the CI `package` job's Actions artifact; create a GitHub
-   release separately if distributing it
+1. Align versions in `package.json`, `package-lock.json`, and `manifest.json`.
+   `npm version` does not update the Chrome manifest.
+2. Update [CHANGELOG.md](CHANGELOG.md) and run the
+   [release checks and packaging workflow](docs/DEVELOPMENT.md#pull-requests-and-packaging).
+3. Load the extension in Chrome and summarize a real page after a toolbar click;
+   automated tests cannot grant that exact `activeTab` interaction.
+4. Tag/push an approved release and distribute the inspected CI ZIP through a
+   separate GitHub release. A merge is not publication to the Chrome Web Store.
 
 ## Issue Triage
 
-Triage labels we use:
-
-- `needs repro`, `blocked`, `security`, `performance`, `help wanted`, `good first issue`
-
-When filing a bug, include:
-
-- Repro steps, expected vs actual, console logs (redacted), browser version, OS, extension version.
+Report bugs with reproduction steps, expected/actual results, extension/browser
+versions, OS, and redacted logs. Link existing issues rather than duplicating
+them; keep security disclosures private.
 
 ## Community Expectations
 
-- Be kind, be specific, be constructive.
-- Follow our [Code of Conduct](CODE_OF_CONDUCT.md).
-- Respect privacy and ethical AI usage in proposals and code.
-
----
-
-Thank you for contributing to GenAI Browser Tool. Your improvements help thousands browse smarter and safer.
+Be specific and constructive, respect privacy, and follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
