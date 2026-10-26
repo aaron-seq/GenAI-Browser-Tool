@@ -30,5 +30,7 @@ Dashboard statuses are manual. Draft review feedback stays unpublished until aut
 
 Next: review #39 against current main; verify [native entry/OS behavior (#40)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/40);
 propose [scanner setup (#41)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/41).
+The optional [coverage-upload failure (#45)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/45)
+remains separate from passing local coverage gates.
 Live-provider quality, minimum-browser/macOS support, real-document recall/latency/cost,
 and production recovery remain unverified. Long-document work stays in the product roadmap.

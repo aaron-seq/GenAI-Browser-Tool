@@ -61,6 +61,10 @@ was skipped on that push event. Its inspected ZIP had
 24 files and all 21 relative runtime references, matching the checkout. The
 [issue delivery record](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/32)
 retains per-head CI, cache, Codecov, and artifact evidence.
+Reinspection on 27 October found that this run's optional Codecov upload was
+rejected after its preliminary queue message. The same rejection recurred on
+cleanup PR #44; [#45](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/45)
+tracks it. Green job status does not establish upload success.
 A read-only agent review also ran seven guard tests; the primary session reran
 the full suite. Neither is independent human approval.
 
