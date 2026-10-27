@@ -57,9 +57,6 @@
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"
   },
-  "comments": {
-    "dependencies": "The extension ships zero runtime dependencies: fetch, chrome.* APIs, and the DOM only. It also has no build step — the repository root is the loadable extension, so packaging is a zip of the root."
-  },
   "lint-staged": {
     "*.js": [
       "eslint --fix",
@@ -73,9 +70,12 @@
     "Chrome >= 116"
   ],
   "files": [
-    "*.js",
-    "*.html",
-    "*.css",
+    "background.js",
+    "content.js",
+    "options.js",
+    "options.html",
+    "options.css",
+    "popup.html",
     "assets/**/*",
     "core/**/*",
     "providers/**/*",

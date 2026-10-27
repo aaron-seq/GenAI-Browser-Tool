@@ -1,148 +1,118 @@
 # GenAI Browser Tool
 
-Read a page, ask questions with source passages, and turn the material into a
-study guide or a quiz. A Chrome 116+ extension using the AI provider and API key
-you choose. Page text goes directly to that provider; there is no application
-server or telemetry.
+Read a page, ask questions with source passages, and turn it into a study guide
+or quiz. This Chrome 116+ extension uses the AI provider and key you choose.
+Page text goes directly to that provider; there is no application server or telemetry.
 
 ![Learning workspace with a question and its source passage](docs/product/images/learning-workspace.png)
 
-The screenshot is from an automated browser test with an intercepted AI response.
-It demonstrates the interface, not live model quality.
+The screenshot uses an intercepted test response; it demonstrates the interface,
+not live model quality.
 
 ## Start here
 
+Clone or download this repository:
+
 ```bash
 git clone https://github.com/aaron-seq/GenAI-Browser-Tool.git
-cd GenAI-Browser-Tool
-npm ci
 ```
 
 1. Open `chrome://extensions`, enable **Developer mode**, and choose **Load
-   unpacked** → the repository root. No build step is needed.
-2. In options, select a provider and enter its API key. **Test connection** sends
-   one small request using the entered key and model. Settings save automatically
-   when a field changes; connection testing is optional.
-3. Open an article and click the extension. Check the word count and page title,
-   then generate a summary or ask a question.
-4. Choose **Open workspace** for a full-page reading area that stays open. You can
-   also import a UTF-8 `.txt` or `.md` document there. Importing sends no AI request.
-5. Use **Make a study guide** or **Quiz me** in Chat, then ask follow-up questions.
-   Expand the sources to check the evidence used for each answer.
+   unpacked** → the repository root containing `manifest.json`. No build or
+   dependency installation is needed to use the extension.
+2. In options, select a provider and enter its API key. Fields save automatically.
+   **Test connection** optionally sends a small request with the entered key/model.
+3. Open an article, click the extension, and check its title and word count.
+   Generate a summary or ask a question.
+4. Choose **Open workspace** for a persistent reading tab. Import UTF-8 `.txt`
+   or `.md` files there; importing alone sends no provider request.
+5. In Chat, choose **Make a study guide** or **Quiz me**, ask follow-up questions,
+   and expand the source passages to check the evidence.
 
-Development needs Node >=20.19 and npm >=10. The extension ships no runtime
-dependencies. It is currently installed unpacked, not published in the Web Store.
+Installation is currently unpacked; there is no published Web Store release.
 
 ## What works
 
-| Action                 | Behavior                                                                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Summary                | Key points, TL;DR, executive, or technical; four lengths. Matching saved results are reused without another provider call.                                    |
-| Chat and study prompts | Search passages across the extracted document, send up to six passages to the model, and show their source labels and excerpts.                               |
-| Remember this document | Restore the latest summary and up to 30 completed exchanges for the same URL and unchanged text. **Clear this chat** deletes that document's saved exchanges. |
-| Import text            | Workspace accepts `.txt`/`.md`, up to 2,000,000 characters and 8 MB. Reimporting the same filename and text restores its thread.                              |
-| Translate              | Choose source and target languages; preferences persist. Translate the page or an opening excerpt.                                                            |
-| Analyze                | Sentiment, insights, entities, and topic tags; local readability score.                                                                                       |
-| Tools                  | Local word counts, reading time, headings, links, and JSON export of saved history/settings without API keys.                                                 |
-| Quick actions          | Right-click a selection/page; `Ctrl+Shift+S` (`Command+Shift+S` on Mac) requests a quick page summary.                                                        |
+- **Summary:** four styles and four lengths; matching saved results avoid another
+  provider call.
+- **Chat:** local keyword retrieval selects up to six passages across the document.
+  Answers display source labels and excerpts.
+- **Document memory:** restore the latest summary and up to 30 completed exchanges
+  for the same URL and unchanged text. **Clear this chat** removes its exchanges.
+- **Import:** text/Markdown up to 2,000,000 characters and 8 MB; the same filename
+  and text identify a returning imported document.
+- **Translate/analyze:** saved language preferences, sentiment, insights, entities,
+  and tags. Local tools provide readability, counts, headings, links, and JSON
+  export of history/settings without keys.
+- **Quick actions:** right-click a page/selection or use `Ctrl+Shift+S`
+  (`Command+Shift+S` on Mac) for a quick page summary.
 
 ### Long documents and speed
 
-Chat uses local **BM25 keyword retrieval** over the document, including its end.
-The displayed passage count shows how much evidence reached the model. Broad
-questions without matching words use representative passages from across the
-document. This is retrieval followed by generation, not model training. Synonyms,
-some languages, and questions requiring all chapters can exceed its recall.
+Summaries process up to **eight sections of 24,000 characters**, with three
+section requests in flight and a final merge (up to nine requests before retries).
+Coverage notices identify omitted text. Translation, other analyses, and quick
+actions still use the first 24,000 characters; see [#17](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/17).
 
-Summaries process up to **eight sections of at most 24,000 characters**, with up
-to three section requests in flight and one final merge: at most nine requests
-before retries. Coverage is displayed, including any text omitted. A matching
-summary cache includes the document, provider, model, style, and length.
-
-Translation, other AI analyses, and quick context-menu actions still use the
-first 24,000 characters. Popup translation/analysis reports partial coverage.
-The quick notification actions are best for short text; use the Summary tab for
-sectioned long-page summaries. Remaining long-task work is tracked in
-[#17](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/17).
-
-AI response time depends on your provider, model, network, and document. The
-[local benchmark](docs/product/RESEARCH.md#performance-evidence) measures retrieval
-only; it does not establish instant book comprehension. PDF, EPUB, scanned books,
-and OCR are [planned separately (#26)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/26).
+Chat uses local BM25 keyword retrieval, not model training. Synonyms, some languages,
+and questions requiring every chapter can exceed its recall. The
+[retrieval benchmark](docs/product/RESEARCH.md#performance-evidence) does not measure
+provider latency or establish instant book comprehension. PDF/EPUB/OCR are
+[planned separately](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/26).
 
 ## Providers and privacy
 
-| Provider  | Default model           | Key                                                 |
-| --------- | ----------------------- | --------------------------------------------------- |
-| Anthropic | `claude-haiku-5-5`      | [Claude Console](https://console.anthropic.com)     |
-| OpenAI    | `gpt-6-luna`            | [API keys](https://platform.openai.com/api-keys)    |
-| Google    | `gemini-3.5-flash-lite` | [AI Studio](https://aistudio.google.com/app/apikey) |
+Choose Anthropic, OpenAI, or Google and optionally override the model in options.
+See [default models and provider evidence](docs/product/RESEARCH.md#provider-selection).
+AI requests require your key and may incur charges. Local extraction/statistics
+work without one; live account access and answer quality have not been evaluated.
 
-Model IDs are configurable. Defaults were checked against official documentation;
-live account access, cost, latency, and answer quality have not been measured.
-See [provider evidence and selection](docs/product/RESEARCH.md#provider-selection).
-AI actions require your key and may incur provider charges. Connection testing
-does not gate saving; without a key, local extraction/statistics still work.
+Keys live in `chrome.storage.sync`, which is not an encrypted secret store.
+History stays in the browser profile: up to 1,000 summaries and 500 exchanges,
+with daily cleanup of entries older than 90 days. **Save history** off disables
+new saves, summary-cache reuse, and restoration; it does not erase old records.
+Saved answers/source excerpts and JSON exports can contain sensitive text.
+Full imported documents and retrieval indexes are not persisted.
 
-API keys are in `chrome.storage.sync`, which is not an encrypted secret store.
-History is local to the browser profile: at most 1,000 summaries and 500 completed
-exchanges, with daily cleanup of entries older than 90 days. **Save history** in
-options disables new saves, cache reuse, and thread restoration. It does not erase
-existing records; clear a document's chat before disabling it if needed. Imported
-full documents and retrieval indexes are not persisted, but saved answers and
-source excerpts may contain sensitive text. JSON export includes saved material.
-If local storage fills, the generated result stays visible with a save warning;
-copy it before closing the tab.
+Options apply immediately. Disabling context menus removes right-click actions;
+the shortcut remains available. Disabling notifications suppresses desktop
+notices, including shortcut results; popup/workspace output remains visible.
+Unreadable preferences suppress optional notices/history and cannot be replaced
+with defaults by an update. If saving fails, copy the visible result before closing.
 See [security and data handling](docs/SECURITY.md).
 
-An optional private semantic retrieval service is being researched in
-[#27](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/27). No backend, local
-model, or semantic embedding service is installed by this release.
-
-Options apply immediately: disabling context menus removes the right-click
-actions; the keyboard shortcut remains available. Disabling notifications
-suppresses desktop notices, including errors and shortcut results. Popup and
-workspace results remain visible. See the [preference fix](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/31).
-
-If saved settings cannot be read, the extension reports the failure instead of
-replacing your choices with defaults. It suppresses desktop notices and optional
-history writes. A result already generated stays visible with a save warning;
-copy it before closing. If Settings cannot load, reload that page to retry.
+No semantic backend or local model is installed. Optional private retrieval is
+[research work](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/27).
 
 ## Troubleshooting
 
-| Symptom                             | Next step                                                                                                                           |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| No API key / 401 / 403              | Check the selected provider, key, model access, and **Test connection** in options.                                                 |
-| 429 / provider unavailable          | Check provider quota; transient failures retry twice. Authentication/configuration errors and timeouts are not retried.             |
-| Cannot read a page                  | Browser pages, the Web Store, and PDF viewers are restricted. Dynamic pages may require reloading after the extension is installed. |
-| Changed page starts a new chat      | Expected: text and URL identify a document, so another version cannot inherit unrelated answers.                                    |
-| Summary is incomplete               | Read the coverage notice. Documents over the eight-section cap need smaller parts.                                                  |
-| Changes are missing after an update | Reload at `chrome://extensions`, then reopen the popup/workspace.                                                                   |
+| Symptom                        | Next step                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Missing key / 401 / 403        | Check the selected provider, key, model access, and **Test connection**.                               |
+| 429 / provider unavailable     | Check quota. Transient failures retry twice; authentication/configuration errors and timeouts do not.  |
+| Cannot read a page             | Browser pages, the Web Store, and PDF viewers are restricted. Reload dynamic pages after installation. |
+| Changed page starts a new chat | URL and text identify a document; changed versions start another thread.                               |
+| Incomplete summary             | Read the coverage notice; split documents beyond the eight-section cap.                                |
+| Settings cannot load           | Reload Settings to retry; do not assume defaults reflect saved choices.                                |
+| Update is missing              | Reload the extension at `chrome://extensions`, then reopen its UI.                                     |
 
 ## Develop and contribute
 
+Development needs Node >=20.19 and npm >=10:
+
 ```bash
+npm ci
 npm run verify
-npm run test:coverage
 npx playwright install chromium
 npm run test:e2e
-npm audit --audit-level=high
-npm run benchmark:retrieval
 ```
 
-Browser tests load the actual extension and intercept provider requests; no real
-API key is required. CI checks Node 20/22/24, browser behavior, and an explicitly
-allowlisted runtime ZIP. See [development](docs/DEVELOPMENT.md) and
-[contributing](CONTRIBUTING.md).
+Browser tests load the actual extension with intercepted provider responses.
+See [development](docs/DEVELOPMENT.md) for coverage, audit, benchmark, CI, and
+packaging commands, and [contributing](CONTRIBUTING.md) for change/review rules.
 
-The dedicated [product brief](docs/product/PRODUCT.md) records the goal, delivered
-behavior, and next steps. Supporting research and verification are in
-[RESEARCH.md](docs/product/RESEARCH.md); the supplied instructions are preserved
-in [ENGINEERING-BRIEF.md](docs/product/ENGINEERING-BRIEF.md).
-
-Issues: [GitHub](https://github.com/aaron-seq/GenAI-Browser-Tool/issues).
-Current work: [GitHub dashboard](https://github.com/users/aaron-seq/projects/6)
-(owner access), [continuation checkpoint](docs/product/PROJECT-STATUS.md), and
-[settings-failure evidence](docs/security-testing-evidence.md).
-License: [MIT](LICENSE).
+[Product brief](docs/product/PRODUCT.md) · [Research](docs/product/RESEARCH.md) ·
+[Supplied engineering brief](docs/product/ENGINEERING-BRIEF.md) ·
+[Current work](docs/product/PROJECT-STATUS.md) ·
+[GitHub issues](https://github.com/aaron-seq/GenAI-Browser-Tool/issues) ·
+[Private dashboard](https://github.com/users/aaron-seq/projects/6) · [MIT license](LICENSE)

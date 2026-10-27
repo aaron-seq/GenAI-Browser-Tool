@@ -1,133 +1,97 @@
 # Settings-failure assessment and evidence
 
-23 October 2026. Selected scope: [issue #38](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/38),
-under [milestone 1](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/1).
-Runtime/test fix: [`ec3eef9`](https://github.com/aaron-seq/GenAI-Browser-Tool/commit/ec3eef91d4f463e0e416e1296601524adf7e8bbe),
-based on main [`b584f4e`](https://github.com/aaron-seq/GenAI-Browser-Tool/commit/b584f4e839308d6468968b7791d3a7af39f2bc43).
-This is a bounded local assessment, not a repository-wide audit or certification.
+Historical assessment, 23 October 2026:
+[issue #38](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/38),
+[merged PR #42](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/42).
+Fix [`ec3eef9`](https://github.com/aaron-seq/GenAI-Browser-Tool/commit/ec3eef91d4f463e0e416e1296601524adf7e8bbe)
+was based on main `b584f4e839308d6468968b7791d3a7af39f2bc43`.
+The [original detailed record](https://github.com/aaron-seq/GenAI-Browser-Tool/blob/6e8288550ef4935684a6a44c87cbbed77b818d14/docs/security-testing-evidence.md)
+retains the full threat table, commands, intermediate failures, and review notes.
+This was a bounded assessment, not a full audit or certification.
 
 ## Decision and demonstrated defect
 
-A rejected settings read returned enabled defaults. Controlled failures reproduced
-unwanted desktop delivery, optional history persistence, and replacement settings
-writes despite saved opt-outs. No remote trigger, live disclosure, or exploitation
-was established. Qualitative impact: moderate potential confidentiality/integrity
-impact; priority P2; high confidence in the reproduced local behavior. This issue
-was already public; restricted findings are tracked separately and excluded here.
+A rejected settings read returned enabled defaults. Injected failures reproduced
+unwanted notifications/history saves and replacement settings writes despite
+saved opt-outs. No remote trigger, exploitation, or live disclosure was established.
+The public issue was classified P2 with moderate potential confidentiality/integrity
+impact; restricted triage remains separate.
 
-Chosen fix: make the [shared reader reject with `SETTINGS_UNAVAILABLE`](https://github.com/aaron-seq/GenAI-Browser-Tool/blob/ec3eef91d4f463e0e416e1296601524adf7e8bbe/core/configuration-manager.js#L61-L81).
-An actually absent record still receives defaults. The alternative of changing
-only notification delivery would leave unsafe updates and history consumers;
-caching old settings would introduce stale opt-in decisions and extra state.
+The [shared reader](https://github.com/aaron-seq/GenAI-Browser-Tool/blob/ec3eef91d4f463e0e416e1296601524adf7e8bbe/core/configuration-manager.js#L61-L81)
+now throws `SETTINGS_UNAVAILABLE`; absent records still receive defaults.
+Optional effects and replacement updates require readable preferences. Generated
+results remain visible with a save warning. Settings blocks edits on startup
+failure and offers reload; confirmed reset handles write failure without requiring
+a second read. First-install Options still opens if menu initialization fails.
 
-[Notification delivery](https://github.com/aaron-seq/GenAI-Browser-Tool/blob/ec3eef91d4f463e0e416e1296601524adf7e8bbe/background.js#L701-L726)
-now requires a successful current read. [Optional history](https://github.com/aaron-seq/GenAI-Browser-Tool/blob/ec3eef91d4f463e0e416e1296601524adf7e8bbe/background.js#L379-L394)
-skips saving on failure while returning the generated result and warning.
-[Settings startup](https://github.com/aaron-seq/GenAI-Browser-Tool/blob/ec3eef91d4f463e0e416e1296601524adf7e8bbe/options.js#L19-L36)
-blocks edits/reset with a persistent reload notice. Confirmed reset handles write
-failure and renders known written defaults without an unnecessary reread.
-Installation menu failure is logged generically and first-install Options still opens.
-
-No new permission, dependency, storage schema, provider, backend, CI workflow,
-deployed configuration, or repository security setting changed. No migration is
-needed. Rollback is a revert of the fix commit, which restores the documented
-failure behavior; it is not an acceptable permanent mitigation.
+Changing only notification delivery would leave other consumers unsafe; caching
+old opt-ins adds stale state. No permission, dependency, schema, backend, CI,
+or deployed setting changed. No migration is needed. Reverting restores the defect,
+so rollback is not a permanent mitigation.
 
 ## Threat boundaries and assessment coverage
 
-Actors are the local reader, an untrusted page/document/model response, and the
-configured provider. Assets are API keys, page text, saved preferences and history.
-Flow: page or local TXT/MD → extension UI → same-extension worker message →
-provider HTTPS; settings use sync storage and optional history uses local storage.
-The extension has no application server, account system, shared tenant, database,
-cookie session, payment flow, deployment target, or autonomous external actions.
+The reviewed flow was page/local TXT/MD → extension UI → same-extension worker →
+configured HTTPS provider, with sync settings and local history. Source review
+and existing tests covered sender validation, escaping/CSP, fenced prompts,
+import bounds, fixed endpoints, provider auth/retry/error redaction, and storage.
+There is no application server, tenant/account/session/payment model or autonomous
+external action.
 
-| Area                        | Assessment and limits                                                                                                                                                                                                                           |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity / authorization    | Source review of sender validation/router and existing negative tests; no account/tenant model to test. Not a full compromised-extension-context assessment.                                                                                    |
-| Browser / input / injection | Source review of escaping, CSP and fenced prompts; existing rendering/validation tests rerun. Prompt injection resistance and live model quality remain unmeasured.                                                                             |
-| Provider / API boundary     | Existing mocked auth, timeout, retry, parsing and redaction tests rerun. No live provider requests, credentials or production targets used.                                                                                                     |
-| Privacy / state integrity   | New controlled failed reads before action, before update, and after generation; no notification/save/write on unknown preferences; recovery and reset tested. Concurrent settings writers remain outside this milestone.                        |
-| Files / network             | Existing import limits and fixed provider endpoints reviewed; imports exercised with a benign TXT fixture. No parser fuzzing, PDF/EPUB/OCR, SSRF service or upload server assessment.                                                           |
-| Secrets / cryptography      | Plaintext sync-key design documented; no new encryption. Accessible repository alerts inspected read-only; restricted triage remains private. This was not a complete history scan or credential validation.                                    |
-| Dependencies / Actions      | `npm audit --audit-level=high` reported no vulnerabilities in the installed locked graph. Existing Node matrix, read-only token permissions and allowlisted ZIP reviewed; audit does not verify action integrity. CI modernization remains #32. |
-| Platform / infrastructure   | Real extension in Playwright Chromium on Windows; CI covers Linux. No containers, deployed infrastructure, load test or recovery drill in scope. Native OS notifications and real menu/shortcut invocation remain #40.                          |
-
-Platform reference: Chrome documents [asynchronous storage](https://developer.chrome.com/docs/extensions/reference/api/storage#concepts-and-usage),
-and recommends [minimal privileges and HTTPS](https://developer.chrome.com/docs/extensions/develop/security-privacy/stay-secure).
-Actions review used GitHub's [secure-use guidance](https://docs.github.com/en/actions/reference/security/secure-use).
-These references inform selected checks, not a compliance claim.
+[Chrome storage](https://developer.chrome.com/docs/extensions/reference/api/storage#concepts-and-usage)
+is asynchronous. Read failure gives no evidence of permission for optional effects.
+Plaintext key storage and incomplete prompt-injection resistance remain documented
+in [SECURITY.md](SECURITY.md). This assessment did not include a full history scan,
+credential validation, parser fuzzing, concurrent settings writers, or compromised
+extension contexts.
 
 ## Requirement → regression → oracle
 
-| Requirement                                            | Evidence / expected behavior                                                                                                                                                                                                      |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1: missing and unreadable settings differ             | [Configuration tests](../tests/core/configuration-manager.test.js): new-install defaults and older record merging remain; rejected read returns a generic typed error without private detail.                                     |
-| R2: update requires known current values               | Same file: failed update performs no write; a later successful update preserves saved keys/flags. [Actual Options browser flow](../tests/e2e/settings-failure.spec.js) checks the stored object and retry success.                |
-| R3: no optional desktop delivery on unknown opt-in     | [Worker regressions](../tests/integration/extension-workflow.test.js): menu/shortcut callback × provider success/error, continuing read failure, no notification call; continuing failure also makes no provider/extraction call. |
-| R4: generated result survives an optional save failure | Summary and answer worker tests assert text plus warning and no history write. Browser Summary click verifies visible text, Not saved notice, and absent real local history keys.                                                 |
-| R5: recovery is actionable                             | [Options tests](../tests/options/settings.test.js) and browser test check blocked controls, persistent reload alert, unchanged saved state, reload recovery, reset success and write failure.                                     |
-| R6: installation remains usable                        | Worker lifecycle tests cover install/update failure, correct Options opening, generic log, no provider/notification, and successful next menu initialization.                                                                     |
+| Requirement                               | Regression and observable result                                                                                                                                                 |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1: absent ≠ unreadable                   | [Configuration tests](../tests/core/configuration-manager.test.js): defaults only for absent records; read errors are generic and typed                                          |
+| R2: preserve unknown saved choices        | Same tests plus [Options browser flow](../tests/e2e/settings-failure.spec.js): no failed-update write; later success preserves keys/flags                                        |
+| R3: no optional notices on unknown opt-in | [Worker tests](../tests/integration/extension-workflow.test.js): menu/shortcut × success/error, no notification; continuing read failure also prevents extraction/provider calls |
+| R4: retain generated output               | Worker/browser summary and chat cases: text plus save warning, no history write                                                                                                  |
+| R5: actionable recovery                   | [Options tests](../tests/options/settings.test.js): disabled controls, reload recovery, reset success/write failure; browser checks stored state                                 |
+| R6: usable installation                   | Worker lifecycle cases: correct Options opening, generic log, no provider/notice, next menu initialization succeeds                                                              |
 
-The oracle is saved-choice preservation: unavailable storage provides no evidence
-of permission for optional effects or replacement writes. A user-confirmed reset
-is an explicit write and can render the known successful value. Tests assert state
-and effects, not merely successful completion. No tests were disabled or coverage
-floors lowered. The former test requiring defaults on read failure was changed
-because it encoded the reported defect; the fix commit explains that contract change.
+No meaningful assertion was removed or coverage floor lowered. The old test
+requiring defaults on read failure changed because it encoded the defect.
 
 ## Reproduction and validation record
 
-Commands below were run in the parent Codex session on Windows with Node 22.18.0,
-npm 11.6.2, Vitest/coverage 4.1.12, Vite 8.2.4 and Playwright 1.62.1. Provider calls
-were stubbed/intercepted with synthetic keys; storage faults were injected locally.
-No install/lockfile change was needed. Unit tests mock Chrome; browser tests load
-the actual unpacked extension but deliberately substitute provider and failing reads.
+The original session used Windows / Node 22.18.0 / npm 11.6.2,
+Vitest/coverage 4.1.12, Vite 8.2.4, and Playwright 1.62.1.
+Unit tests mocked Chrome APIs; browser tests loaded the actual unpacked extension
+with synthetic keys, intercepted providers, and injected storage faults.
 
-| Run                                                                                                                                                                              | Revision/state                                                | Observed result                                                                                                                                                         |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run verify`                                                                                                                                                                 | clean main b584f4e before edits                               | Lint/typecheck and 297 tests passed, exit 0.                                                                                                                            |
-| `npx playwright test tests/e2e/preferences.spec.js`                                                                                                                              | same baseline                                                 | 1 passed, exit 0.                                                                                                                                                       |
-| `npm audit --audit-level=high`                                                                                                                                                   | unchanged locked graph                                        | No vulnerabilities reported, exit 0; no claim about repository alerts or all supply-chain risk.                                                                         |
-| `npx vitest run tests/core/configuration-manager.test.js tests/integration/extension-workflow.test.js -t 'unavailable settings\|does not replace saved\|settings read failures'` | new tests, original runtime                                   | 10 intended failures: enabled-default behavior violated R1–R4.                                                                                                          |
-| `npx playwright test tests/e2e/settings-failure.spec.js`                                                                                                                         | new tests, original runtime                                   | 2 intended failures: replacement update reported saved; unwanted history save lacked Not saved notice.                                                                  |
-| Two new reset cases in `tests/options/settings.test.js`                                                                                                                          | throwing reader, before reset adaptation                      | 2 failures and unhandled rejections; reset depended on reread and did not handle write failure. Exact original filter was not retained.                                 |
-| `npx vitest run tests/integration/extension-workflow.test.js -t 'handles unavailable settings during'`                                                                           | throwing reader, before installation adaptation               | 2 intended rejected-listener failures. Agent source finding independently reproduced by parent.                                                                         |
-| `npm run lint -- --max-warnings 0` and `npm run typecheck`                                                                                                                       | final runtime, dirty before ec3eef9                           | Both passed. One intermediate missing-argument type error was fixed; no checks suppressed.                                                                              |
-| `npm run test:coverage`                                                                                                                                                          | same runtime before commit                                    | 311 tests / 13 files passed, exit 0; statements 94.57%, branches 84.44%, functions 94.71%, lines 96.68%. Existing global/worker floors retained.                        |
-| `npm run test:e2e`                                                                                                                                                               | same runtime before commit                                    | 20 passed, exit 0.                                                                                                                                                      |
-| `npx playwright test tests/e2e/settings-failure.spec.js --repeat-each=10`                                                                                                        | same settings/Options/runtime; before installation-only catch | 20/20 passed, exit 0; no retry used to hide failures.                                                                                                                   |
-| `npx vitest run tests/core/configuration-manager.test.js tests/integration/extension-workflow.test.js tests/options/settings.test.js --sequence.shuffle --sequence.seed=3810`    | final runtime before commit                                   | 118 passed, exit 0. Initial shuffle exposed an existing persistent local-write rejection leaking into alarm cleanup; resetting that mock between tests fixed isolation. |
+| State / command                                                           | Observed result                                                                                 |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Clean base: `npm run verify`                                              | Lint/types and 297 tests passed                                                                 |
+| New regressions against original runtime                                  | 10 intended unit failures and 2 browser failures demonstrated unsafe defaults/update/save paths |
+| Throwing reader before consumer adaptations                               | Two reset failures/unhandled rejections and two rejected lifecycle listeners                    |
+| Final `npm run lint -- --max-warnings 0`, `npm run typecheck`             | Passed after correcting an intermediate missing argument                                        |
+| `npm run test:coverage`                                                   | 311 tests / 13 files; statements 94.57%, branches 84.44%, functions 94.71%, lines 96.68%        |
+| `npm run test:e2e`                                                        | 20 passed                                                                                       |
+| `npx playwright test tests/e2e/settings-failure.spec.js --repeat-each=10` | 20/20 passed before installation-only catch; no retry used                                      |
+| Three affected Vitest files, `--sequence.shuffle --sequence.seed=3810`    | 118 passed after isolating a persistent local-write rejection between tests                     |
+| `npm audit --audit-level=high`                                            | Zero vulnerabilities reported in the locked graph                                               |
 
-An intermediate lifecycle assertion expected one logger argument rather than two;
-it was corrected and rerun. A final test-only console-spy cleanup was followed by
-12 configuration tests passing. Precommit applied repository ESLint/Prettier rules;
-CI must validate the resulting pushed head. Final CI evidence is maintained on
-[issue #38](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/38), with its exact
-head/run links; a later documentation commit does not change the runtime revision above.
-
-Fresh agent `settings_fix_review` inspected the diff and all settings-reader
-consumers read-only. It reported 116 mocked tests passing and found the missed
-installation catch. The parent reproduced and fixed that finding, independently
-ran the broader suite, and reran shuffled tests. The agent retested the two
-installation cases successfully. These are agent checks, not independent human
-review, penetration testing, or approval.
+Final CI is recorded on [#38](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/38)
+at exact heads. A read-only agent found the missed installation catch; the primary
+session reproduced/fixed it and independently ran the full/shuffled suites.
+The agent retested installation cases. This is not independent human approval.
 
 ## Known gaps and next checks
 
-- [#40](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/40): real native menu,
-  keyboard dispatch and OS notification presentation. An exploratory headless
-  `Control+Shift+S` attempt made no provider request within five seconds; this is a
-  harness/platform gap, not proof of a product defect. It was not retained as a
-  passing or silently skipped test. The older sentiment browser test was renamed
-  to describe its actual message route; its assertions remain.
-- [#41](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/41): Dependabot alert
-  API returned disabled (403); code scanning returned no analysis (404). Neither
-  is a clean scan. Settings were inspected only. Propose scanner setup and obtain
-  covering authorization before enabling repository security settings.
-- [#32](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/32): Actions/runtime
-  modernization remains separate. No CI trust changes were bundled here.
-- Untested: Chrome 116 minimum, macOS, native accessibility technology, live
-  providers, malicious model reliability, concurrent settings edits, real-document
-  recall/latency/cost, production recovery and the separate UI draft #39 combined
-  with this fix. No instant comprehension or production-readiness claim follows.
+- [#40](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/40): native menus,
+  keyboard dispatch, OS notification presentation. A headless shortcut attempt
+  produced no request within five seconds; that is a harness gap, not a proven bug.
+- [#41](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/41): Dependabot API
+  returned disabled/403 and code scanning no analysis/404. Neither is a clean scan.
+  Scanner settings require covering authorization.
+- Action/runtime work subsequently merged separately; see [CI evidence](ci-modernization-evidence.md).
+- Unverified: Chrome 116 minimum, macOS/assistive technology, live provider quality,
+  malicious-model reliability, concurrent settings edits, document recall/latency/
+  cost, production recovery, and the separate UI draft combined with this fix.
