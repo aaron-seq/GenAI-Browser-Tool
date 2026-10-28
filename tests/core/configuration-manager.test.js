@@ -24,13 +24,13 @@ describe('ConfigurationManager', () => {
     it('writes defaults on first initialize', async () => {
       await configManager.initialize();
       expect(chrome.storage.sync.set).toHaveBeenCalledWith({
-        user_preferences: configManager.defaultSettings
+        user_preferences: configManager.defaultSettings,
       });
     });
 
     it('does not overwrite settings that already exist', async () => {
       chrome.storage.sync.get.mockResolvedValue({
-        user_preferences: { initialized: true, preferredProvider: 'openai' }
+        user_preferences: { initialized: true, preferredProvider: 'openai' },
       });
 
       await configManager.initialize();
@@ -43,7 +43,7 @@ describe('ConfigurationManager', () => {
       // A v4 preferences object has no `features` key. Options page code read
       // settings.features.smartBookmarks directly and threw on every load.
       chrome.storage.sync.get.mockResolvedValue({
-        user_preferences: { initialized: true, preferredProvider: 'openai' }
+        user_preferences: { initialized: true, preferredProvider: 'openai' },
       });
 
       const prefs = await configManager.getUserPreferences();
@@ -54,24 +54,66 @@ describe('ConfigurationManager', () => {
       expect(prefs.models).toEqual({});
     });
 
-    it('returns defaults rather than throwing when storage fails', async () => {
-      chrome.storage.sync.get.mockRejectedValue(new Error('storage unavailable'));
-
-      const prefs = await configManager.getUserPreferences();
-      expect(prefs.preferredProvider).toBe('anthropic');
+    it('distinguishes unavailable settings from a new installation', async () => {
+      const logs = vi.spyOn(console, 'error');
+      chrome.storage.sync.get.mockRejectedValue(
+        new Error('fixture-private-storage-detail')
+      );
+      try {
+        await expect(configManager.getUserPreferences()).rejects.toMatchObject({
+          code: 'SETTINGS_UNAVAILABLE',
+          message: 'Saved settings are unavailable. Try again.',
+        });
+        expect(JSON.stringify(logs.mock.calls)).not.toContain(
+          'fixture-private-storage-detail'
+        );
+      } finally {
+        logs.mockRestore();
+      }
     });
   });
 
   describe('updating settings', () => {
+    it('does not replace saved preferences after a failed read and can recover', async () => {
+      const stored = {
+        preferredProvider: 'openai',
+        apiKeys: { openai: 'fixture-key' },
+        features: { notifications: false },
+      };
+      chrome.storage.sync.get
+        .mockRejectedValueOnce(new Error('storage unavailable'))
+        .mockResolvedValue({ user_preferences: stored });
+      await expect(
+        configManager.updateUserPreferences({ theme: 'dark' })
+      ).rejects.toMatchObject({ code: 'SETTINGS_UNAVAILABLE' });
+      expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+      await configManager.updateUserPreferences({ theme: 'dark' });
+      expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+        user_preferences: expect.objectContaining({
+          ...stored,
+          features: expect.objectContaining(stored.features),
+          theme: 'dark',
+        }),
+      });
+    });
+
     it('merges nested apiKeys instead of replacing the whole map', async () => {
       chrome.storage.sync.get.mockResolvedValue({
-        user_preferences: { initialized: true, apiKeys: { openai: 'sk-openai' } }
+        user_preferences: {
+          initialized: true,
+          apiKeys: { openai: 'sk-openai' },
+        },
       });
 
-      await configManager.updateUserPreferences({ apiKeys: { anthropic: 'sk-ant' } });
+      await configManager.updateUserPreferences({
+        apiKeys: { anthropic: 'sk-ant' },
+      });
 
       const written = chrome.storage.sync.set.mock.calls[0][0].user_preferences;
-      expect(written.apiKeys).toEqual({ openai: 'sk-openai', anthropic: 'sk-ant' });
+      expect(written.apiKeys).toEqual({
+        openai: 'sk-openai',
+        anthropic: 'sk-ant',
+      });
     });
 
     it('merges top-level fields and stamps updatedAt', async () => {
@@ -91,8 +133,8 @@ describe('ConfigurationManager', () => {
           initialized: true,
           preferredProvider: 'openai',
           apiKeys: { openai: 'sk-openai' },
-          models: { openai: 'gpt-test' }
-        }
+          models: { openai: 'gpt-test' },
+        },
       });
 
       const client = await configManager.createAIClient();
@@ -104,12 +146,18 @@ describe('ConfigurationManager', () => {
 
     it('refuses to run when the selected provider has no key', async () => {
       chrome.storage.sync.get.mockResolvedValue({
-        user_preferences: { initialized: true, preferredProvider: 'gemini', apiKeys: {} }
+        user_preferences: {
+          initialized: true,
+          preferredProvider: 'gemini',
+          apiKeys: {},
+        },
       });
 
-      await expect(configManager.createAIClient()).rejects.toBeInstanceOf(AIError);
+      await expect(configManager.createAIClient()).rejects.toBeInstanceOf(
+        AIError
+      );
       await expect(configManager.createAIClient()).rejects.toMatchObject({
-        code: 'MISSING_API_KEY'
+        code: 'MISSING_API_KEY',
       });
     });
 
@@ -118,12 +166,12 @@ describe('ConfigurationManager', () => {
         user_preferences: {
           initialized: true,
           preferredProvider: 'gemini',
-          apiKeys: { openai: 'sk-openai' }
-        }
+          apiKeys: { openai: 'sk-openai' },
+        },
       });
 
       await expect(configManager.createAIClient()).rejects.toMatchObject({
-        code: 'MISSING_API_KEY'
+        code: 'MISSING_API_KEY',
       });
     });
   });
@@ -134,14 +182,18 @@ describe('ConfigurationManager', () => {
         user_preferences: {
           initialized: true,
           preferredProvider: 'anthropic',
-          apiKeys: { anthropic: 'sk-ant' }
-        }
+          apiKeys: { anthropic: 'sk-ant' },
+        },
       });
 
       const status = await configManager.getProviderStatus();
 
       expect(status).toMatchObject({ provider: 'anthropic', configured: true });
-      expect(status.providers).toEqual({ anthropic: true, openai: false, gemini: false });
+      expect(status.providers).toEqual({
+        anthropic: true,
+        openai: false,
+        gemini: false,
+      });
     });
   });
 });

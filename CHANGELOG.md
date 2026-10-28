@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Restore keyboard access to summary-length radios and expose task-tab selection,
   panel relationships, and Arrow/Home/End navigation (#36).
+- Replace fictional contribution examples, consolidate setup and validation
+  guidance, and exclude development configs from the npm package (#35).
+- Pin verified current CI action releases, select Ubuntu 26.04 explicitly, and
+  avoid retaining checkout credentials while preserving the Node test matrix (#32).
+- Preserve saved choices when settings reads fail: suppress optional notices and
+  history, reject replacement updates, keep generated output visible, and show
+  recoverable Settings/reset failures (#38).
 - Apply context-menu and desktop-notification preferences in the worker, including
   settings changes, stale clicks, and opt-out during an in-flight request (#31).
 - Patch Vitest and matching coverage packages to 4.1.12 and Vite to 8.2.4 for

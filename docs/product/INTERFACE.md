@@ -64,3 +64,17 @@ were not tested. The settings/onboarding design remains in
 [#37](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/37); the separately
 reproduced notification read-failure gap is in
 [#38](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/38).
+
+## Integration verification — 28 October 2026
+
+Integrated current main [bd0e0f7](https://github.com/aaron-seq/GenAI-Browser-Tool/commit/bd0e0f7e6a648117a801aea38a161ee2fad9f8ab)
+into the interface branch and resolved the README, changelog, and product-brief
+conflicts. The newer settings-failure fix from [#42](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/42)
+is retained; the #38 limitation above describes the original October 23 revision.
+
+On Windows, Node 22.18.0 / npm 11.6.2: lint with zero warnings, typecheck,
+313 unit/integration tests, and 21 real-Chromium tests pass. Coverage is 94.68%
+statements, 84.11% branches, 94.75% functions, and 96.84% lines, with the existing
+floors unchanged. The npm dry run contains 25 files and excludes development
+configs, tests, and docs. Provider responses remain intercepted; the native-entry,
+screen-reader, OS, and live-provider limits recorded above still apply.

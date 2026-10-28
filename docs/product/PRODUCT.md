@@ -1,6 +1,6 @@
 # Reading and learning workspace
 
-Updated 23 October 2026 for the unreleased interface revision. This is the maintained product brief;
+Updated 28 October 2026 for the unreleased interface revision. This is the maintained product brief;
 the [supplied engineering brief](ENGINEERING-BRIEF.md) is preserved separately.
 
 ## Objective
@@ -41,6 +41,29 @@ from [Perplexity Comet's documented experience](https://www.perplexity.ai/comet/
 This comparison is based on its documentation, not a hands-on latency or quality test.
 
 ## Next steps and material gaps
+
+[Cleanup #35](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/35) merged through
+[#44](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/44), correcting contribution
+examples and consolidating documentation/packaging. Current delivery and validation
+are linked from the [checkpoint](PROJECT-STATUS.md).
+
+The [settings-failure milestone](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/1)
+protects saved privacy choices and recovery without adding a backend or permission.
+Its implementation merged through [PR #42](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/42);
+see the [checkpoint](PROJECT-STATUS.md)
+and [verification record](../security-testing-evidence.md). The separate
+[reading-interface draft #39](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/39)
+also awaits review. The [private dashboard](https://github.com/users/aaron-seq/projects/6)
+tracks both without counting an issue and its PR as separate outcomes.
+
+CI action and runner validation is delivered through
+[PR #43 / issue #32](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/32),
+under [milestone 2](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/2).
+It exercises the privacy fix with updated CI actions; application behavior and
+runtime dependencies are unchanged by that milestone.
+Remaining verification work: [native menu/shortcut entry points (#40)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/40),
+[repository scanning (#41)](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/41),
+with the delivery state recorded in the checkpoint.
 
 | Work                                                                                          | Completion condition                                                                                                          |
 | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |

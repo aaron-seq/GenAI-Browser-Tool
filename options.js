@@ -17,9 +17,21 @@ class OptionsPage {
   }
 
   async initialize() {
-    this.settings = await this.configManager.getUserPreferences();
-    this.render();
-    this.setupEventListeners();
+    try {
+      this.settings = await this.configManager.getUserPreferences();
+      this.render();
+      this.setupEventListeners();
+    } catch {
+      // Do not present empty/default controls as the user's saved configuration.
+      document.querySelectorAll('input, select, button').forEach(element => {
+        element.setAttribute('disabled', '');
+      });
+      const notice = document.createElement('p');
+      notice.setAttribute('role', 'alert');
+      notice.textContent =
+        'Could not load saved settings. Reload this page to retry. Your saved settings have not been changed.';
+      document.querySelector('.settings-content')?.prepend(notice);
+    }
   }
 
   render() {
@@ -136,12 +148,18 @@ class OptionsPage {
 
   async resetSettings() {
     if (!confirm('Reset all settings, including saved API keys?')) return;
-    await this.configManager.setUserPreferences(
-      this.configManager.defaultSettings
-    );
-    this.settings = await this.configManager.getUserPreferences();
-    this.render();
-    this.showSaveIndicator('Settings reset to defaults');
+    try {
+      await this.configManager.setUserPreferences(
+        this.configManager.defaultSettings
+      );
+      this.settings = this.configManager.withDefaults(
+        this.configManager.defaultSettings
+      );
+      this.render();
+      this.showSaveIndicator('Settings reset to defaults');
+    } catch {
+      this.showSaveIndicator('Could not reset settings. Try again.');
+    }
   }
 
   /** @param {Event} event */

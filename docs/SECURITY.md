@@ -2,295 +2,142 @@
 
 ## Supported Versions
 
-We actively support the following versions with security updates:
+| Version | Supported with security updates |
+| ------- | ------------------------------- |
+| 5.3.x   | Yes                             |
+| 5.2.x   | Yes                             |
+| 5.1.x   | Yes                             |
+| <5.1    | No                              |
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.3.x   | :white_check_mark: |
-| 5.2.x   | :white_check_mark: |
-| 5.1.x   | :white_check_mark: |
-| < 5.1   | :x:                |
-
-Versions before 5.0 shipped stub AI providers and are not a supported
-configuration.
+Versions before 5.0 shipped stub AI providers and are not supported.
 
 ## Reporting a Vulnerability
 
 ### How to Report
 
-If you discover a security vulnerability in GenAI Browser Tool, please report it responsibly:
-
-1. **DO NOT** create a public GitHub issue
-2. **DO NOT** disclose the vulnerability publicly until it has been addressed
-3. **DO** email security concerns directly to: aaronsequeira12@gmail.com
-4. **DO** provide detailed information about the vulnerability
+Email **aaronsequeira12@gmail.com**, subject
+`[SECURITY] GenAI Browser Tool - [Brief Description]`.
+Do not file a public issue or disclose the vulnerability before it is addressed.
 
 ### What to Include
 
-When reporting a security vulnerability, please include:
-
-- **Description**: Clear description of the vulnerability
-- **Impact**: Potential impact and severity assessment
-- **Reproduction**: Step-by-step instructions to reproduce
-- **Evidence**: Screenshots, logs, or proof of concept (if applicable)
-- **Environment**: Browser version, extension version, operating system
-- **Contact**: Your preferred method of communication for follow-up
+Send the impact, reproduction steps, redacted evidence, browser/extension/OS
+versions, and a way to follow up. Do not send keys or unrelated private page data.
 
 ### Response Timeline
 
-- **Acknowledgment**: Within 48 hours of report
-- **Initial Assessment**: Within 5 business days
-- **Status Updates**: Weekly until resolution
-- **Resolution**: Target 30 days for critical issues, 90 days for others
+- Acknowledgment: within 48 hours.
+- Initial assessment: within five business days.
+- Status updates: weekly until resolution.
+- Resolution targets: 30 days for critical issues, 90 days for others.
 
 ## Security Measures
 
 ### Content Security Policy
 
-```json
-{
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
-  }
-}
-```
-
-Extension pages load no remote scripts and no remote stylesheets. Network access
-is limited to the three provider hosts declared in `host_permissions`.
+The [manifest](../manifest.json) sets
+`script-src 'self'; object-src 'self'`. Extension pages load no remote scripts
+or stylesheets. Provider hosts are explicitly declared in `host_permissions`.
 
 ### Input validation
 
-- **Message validation** (`utils/validation-service.js`): every
-  `chrome.runtime` message must be an object carrying a non-empty string
-  `actionType` and a sender whose id is this extension's own, or it is rejected
-  before any work is done. An `actionType` that is well formed but unrecognised
-  is rejected by the router's `default` case, still before any work — the list
-  of valid actions lives in exactly one place rather than being mirrored here.
-- **Input limits**: page/text documents are limited to 2,000,000 characters.
-  Chat selects at most six passages of 2,800 characters. Translation and other
-  single-request analyses clip context to 24,000 characters. Summaries can send
-  up to eight sections of 24,000 characters, followed by a merge request.
-- **Question length cap**: 1,000 characters. This bounds token spend; it is not
-  a security boundary.
+[Message validation](../utils/validation-service.js) requires an object,
+nonempty `actionType`, and this extension's sender ID. The worker rejects unknown
+actions. Documents are capped at 2,000,000 characters; questions at 1,000.
+The question cap bounds spend, not security.
 
-  There is deliberately **no content filter on questions**. An earlier version
-  rejected questions matching patterns like `/<iframe/` and `/on\w+\s*=/`. It
-  held those patterns as instance fields carrying the `g` flag and tested them
-  with `RegExp.prototype.test`, which advances `lastIndex` on a global regex — so
-  the same question was blocked, then allowed, then blocked, depending only on
-  how many times the function had been called. It also rejected ordinary
-  questions such as "Is there only one=1 result?". A question is the user's own
-  text, is never evaluated, and reaches the DOM only through `renderMarkdown`,
-  which escapes; the filter added no protection and cost real functionality.
-
-- **Output escaping**: model output is escaped with `escapeHtml()` _before_ the
-  small markdown subset is applied, so no tag or attribute from page-derived
-  text can reach the DOM as markup. Covered by tests in
-  `tests/popup/rendering.test.js`.
-
-There is no DOMPurify and no Zod in this project. Escaping is done by a small
-local function because the only markup ever produced is a fixed set of tags this
-code inserts itself.
+Model output is HTML-escaped before the fixed Markdown subset is applied.
+Questions are never evaluated and have no keyword-based content filter.
+There is no DOMPurify or Zod dependency; [renderer tests](../tests/popup/rendering.test.js)
+exercise the local escaping path.
 
 ### Prompt injection
 
-Page content is untrusted: a page can contain text designed to steer the model.
-Mitigations in `core/tasks.js`:
+[Task prompts](../core/tasks.js) fence page content, identify it as untrusted,
+and instruct the model to ignore embedded directives and acknowledge missing
+evidence. These measures cannot eliminate prompt injection. Treat answers about
+hostile pages as untrusted; the extension performs no autonomous external actions.
 
-- Extracted text is fenced inside `<<<PAGE_CONTENT>>>` markers.
-- Every system prompt states that the fenced region is untrusted data and that
-  directives inside it must not be followed.
-- Prompts instruct the model to answer only from the fenced content and to say so
-  when the content does not answer the question.
-
-This reduces but does not eliminate the risk. Treat model output about a hostile
-page as untrusted, and never act on it automatically. The extension performs no
-actions on the user's behalf, which bounds the blast radius.
+Chat sends up to six passages of 2,800 characters. Summaries process up to eight
+24,000-character sections plus a merge. Translation/other single-request tasks
+use the first 24,000 characters. These bounds limit input, not model reliability.
 
 ### API key handling
 
-- Keys are stored in `chrome.storage.sync` under `user_preferences.apiKeys`.
-- **Keys are not encrypted.** `chrome.storage.sync` is plaintext at the API level
-  and syncs to the user's Google account. Anything running in the extension's own
-  context can read them, as can anyone with access to the browser profile.
-- Keys are sent only to the matching provider host over HTTPS, in a request
-  header — never in a URL, where they would land in logs and history.
-- Keys are never written to logs and never included in error messages; there is a
-  regression test for this in `tests/providers/ai-client.test.js`.
-- A key entered for one provider is never sent to another: the client is
-  constructed from the selected provider's own key or it throws.
+Keys live in `chrome.storage.sync.user_preferences.apiKeys`.
+**They are not encrypted at the API level** and sync with the browser profile;
+extension-context code and people with profile access can read them.
+Only the selected provider's key is sent, in an HTTPS header to its matching host,
+never in a URL. [Client tests](../tests/providers/ai-client.test.js) cover key
+redaction in errors. Keys are excluded from exports and logs.
 
-Use an API key scoped and budgeted for this extension, and revoke it if the
-browser profile is compromised.
+Use a scoped, budgeted key and revoke it if the profile is compromised.
 
 ### Data handling
 
-- Page text is sent to the provider you configured, and to nobody else. There is
-  no backend and no analytics.
-- With Save history enabled, summaries and completed chat exchanges, including
-  focused source excerpts, are stored in `chrome.storage.local`. A daily alarm
-  prunes entries older than 90 days; list caps are 1,000 summaries and 500 exchanges.
-- Document identity hashes URL and text; this is identification, not encryption.
-  New or changed documents do not inherit another document's thread. Older
-  unscoped history is retained for export, not restored into a page.
-- Full imported text and local BM25 indexes stay in memory and are not persisted.
-  A chosen text file is read locally; importing alone makes no provider request.
-- Save history off disables new saves, summary-cache reuse, and chat restoration.
-  It does not delete previous records. Clear this chat deletes that document's
-  saved exchanges, including when the worker receives the action with memory off.
-- Export writes a JSON file to your machine. Nothing is uploaded.
-- The content script only reads the DOM. It never modifies the page and has no
-  network access of its own.
+- User-triggered AI actions send page/document text to the configured provider.
+  There is no application backend or analytics. Extraction/import alone makes
+  no provider request; the optional connection test sends a small request.
+- Unreadable settings cannot authorize optional desktop notices/history or
+  replacement updates. Generated output remains visible if saving fails; copy it
+  before closing. See [settings-failure evidence](security-testing-evidence.md).
+- Local history holds up to 1,000 summaries and 500 completed exchanges, including
+  source excerpts. Daily cleanup prunes entries older than 90 days; records without
+  timestamps remain.
+- URL/text hashes identify documents; they are not encryption. Changed documents
+  start new threads. Old unscoped history remains exportable without restoration.
+- Full imported text and BM25 indexes stay in memory. Saved answers/excerpts may
+  contain sensitive text. JSON export writes saved material to the user's machine.
+- Save history off disables saves, cache reuse, and restoration; it does not delete
+  past records. Clear this chat removes matching exchanges even when memory is off.
+- The content script only reads the page; it neither modifies it nor makes
+  provider requests.
 
 ## Security Best Practices
 
-### For Users
-
-1. **Keep Extension Updated**: Always use the latest version
-2. **Secure API Keys**: Use separate API keys for different applications
-3. **Review Permissions**: Understand what permissions the extension requests
-4. **Monitor Usage**: Regularly review your API usage and costs
-5. **Report Issues**: Report any suspicious behavior immediately
-
-### For Developers
-
-1. **Code Review**: All code changes require security review
-2. **Dependency Scanning**: Regular dependency vulnerability scanning
-3. **Security Testing**: Automated security testing in CI/CD
-4. **Principle of Least Privilege**: Minimal permission requests
-5. **Input Validation**: Validate all inputs at boundaries
+All code changes require security review. Regularly scan dependencies and retain
+automated security regression checks in CI. Review this policy quarterly.
+Contributors must preserve validation, output escaping, CSP, minimum permissions,
+HTTPS endpoints, and user privacy choices. Never log keys or private page content.
+Use [local checks](DEVELOPMENT.md#local-validation) and meaningful regressions for
+changes to these boundaries.
 
 ## Known Security Considerations
 
-These are accepted risks, stated plainly rather than claimed as solved.
-
-### API key exposure
-
-**Risk**: keys are readable by anything with access to the extension context or
-the browser profile, and they sync to the user's Google account.
-**Mitigation**: keys stay out of logs, error messages, and URLs; only the
-selected provider's key is ever loaded.
-**Residual risk**: real. `chrome.storage.sync` is not a secret store, and Chrome
-offers extensions no encrypted alternative. Scope and budget the key accordingly.
-
-### Cross-site scripting
-
-**Risk**: page text — and model output derived from it — could reach the DOM as
-markup.
-**Mitigation**: all such text is HTML-escaped before the fixed markdown subset is
-applied; the extension pages run under `script-src 'self'`.
-**Residual risk**: low. Tested in `tests/popup/rendering.test.js`.
-
-### Prompt injection
-
-**Risk**: a hostile page steers the model's output.
-**Mitigation**: content fencing and explicit system-prompt instructions (above).
-**Residual risk**: real — no prompt-level defence is complete. Bounded by the
-extension taking no actions on the user's behalf.
-
-### Data sent to third parties
-
-**Risk**: page content, including anything sensitive on the page, is sent to the
-configured AI provider.
-**Mitigation**: the user chooses the provider and triggers each action
-explicitly; each task has the limits above. No AI request is sent merely by
-opening or importing a document. The optional connection test sends a small
-request with the entered key/model, without saving the key.
-**Residual risk**: inherent to the product. Do not run AI actions on pages with
-data you would not paste into that provider's console.
-
-### Network interception
-
-**Risk**: API traffic intercepted in transit.
-**Mitigation**: HTTPS only, enforced by the CSP and by `host_permissions`.
-There is no certificate pinning and no request signing — extensions cannot
-pin certificates, and providers do not offer request signing.
+Plaintext keys, third-party processing, and prompt injection remain material risks.
+Do not submit content you would not send to the chosen provider yourself.
+Escaping and CSP address executable markup; they do not make model claims reliable.
+Provider traffic uses HTTPS without certificate pinning or request signing.
+The [architecture/storage contracts](DEVELOPMENT.md) describe the implementation.
 
 ## Assurance limits
 
-No independent security audit, legal compliance assessment, or Chrome Web Store
-approval is evidenced by this repository. The controls and regression tests above
-describe implemented behavior; they are not certification claims. No optional
-semantic backend or model training service is deployed by this release.
+The repository provides no independent security audit, legal compliance
+assessment, or Chrome Web Store approval. Tests demonstrate bounded behaviors,
+not certification. No semantic backend or training service is deployed.
+Scanner gaps are tracked in [#41](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/41);
+an absent analysis is not a clean scan.
 
 ## Incident Response
 
-### Response Team
-
-- **Primary Contact**: Aaron Sequeira (aaronsequeira12@gmail.com)
-- **Technical Lead**: Development team
-- **Security Advisor**: External security consultant (if needed)
-
-### Response Process
-
-1. **Detection**: Vulnerability identified or reported
-2. **Assessment**: Evaluate severity and impact
-3. **Containment**: Implement immediate mitigations
-4. **Investigation**: Determine root cause and scope
-5. **Resolution**: Develop and deploy fix
-6. **Communication**: Notify affected users
-7. **Documentation**: Update security documentation
-8. **Prevention**: Implement measures to prevent recurrence
-
-### Severity Classification
-
-**Critical**:
-
-- Remote code execution
-- Arbitrary file access
-- API key theft
-- Complete system compromise
-
-**High**:
-
-- Privilege escalation
-- Significant data exposure
-- Authentication bypass
-- Persistent XSS
-
-**Medium**:
-
-- Limited data exposure
-- Reflected XSS
-- CSRF vulnerabilities
-- Information disclosure
-
-**Low**:
-
-- Minor information leakage
-- Configuration issues
-- Non-security functionality issues
+The primary contact assesses impact, contains the issue, investigates scope,
+develops/tests a fix, communicates relevant advisories, and documents prevention.
+Follow the private reporting process for sensitive details.
 
 ## Security Updates
 
-### Update Process
-
-1. Security fixes prioritized over feature development
-2. Patches tested thoroughly before release
-3. Emergency releases for critical vulnerabilities
-4. Security advisories published when appropriate
-
-### User Notification
-
-- **Critical Issues**: Immediate notification via extension update
-- **Important Issues**: Email notification to registered users
-- **General Issues**: Release notes and changelog
+Security fixes take priority. Test patches and publish release notes/advisories
+when appropriate. This extension is installed unpacked: users must obtain the
+updated source/package and reload it; a GitHub merge does not update installations.
 
 ## Resources
 
-- [Chrome Extension Security](https://developer.chrome.com/docs/extensions/mv3/security/)
-- [OWASP Web Application Security](https://owasp.org/www-project-top-ten/)
-- [Mozilla Web Security Guidelines](https://infosec.mozilla.org/guidelines/web_security)
-- [Google Security Best Practices](https://developers.google.com/web/fundamentals/security/)
+- [Chrome extension security](https://developer.chrome.com/docs/extensions/develop/security-privacy/stay-secure)
+- [Chrome storage behavior](https://developer.chrome.com/docs/extensions/reference/api/storage)
+- [Settings regression evidence](security-testing-evidence.md)
+- [CI trust and validation](ci-modernization-evidence.md)
 
 ## Contact
 
-For security-related questions or concerns:
-
-- **Email**: aaronsequeira12@gmail.com
-- **Subject Line**: [SECURITY] GenAI Browser Tool - [Brief Description]
-- **PGP Key**: Available upon request
-
----
-
-_This security policy is reviewed and updated quarterly. Last updated: November 2024_
+Aaron Sequeira: **aaronsequeira12@gmail.com**.
+PGP key available on request under this policy; no public key is verified here.
