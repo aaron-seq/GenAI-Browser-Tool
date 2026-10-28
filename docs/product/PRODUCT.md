@@ -1,6 +1,6 @@
 # Reading and learning workspace
 
-Updated 27 October 2026 for version 5.3.0. This is the maintained product brief;
+Updated 28 October 2026 for the unreleased interface revision. This is the maintained product brief;
 the [supplied engineering brief](ENGINEERING-BRIEF.md) is preserved separately.
 
 ## Objective
@@ -19,6 +19,9 @@ repeat work fast without representing sampled evidence as complete understanding
   keyed by content, provider, model, style, and length.
 - Persisted language selection, explicit coverage notices, and optional provider
   connection tests using the entered configuration.
+- A restrained reading interface, persistent source panel, keyboard-accessible
+  tabs and summary lengths, and short study actions. See the
+  [interface decisions and evidence](INTERFACE.md).
 
 [README](../../README.md) explains installation and use. [Browser tests](../../tests/e2e/learning-workspace.spec.js)
 demonstrate these flows with intercepted provider responses. They do not prove
@@ -39,9 +42,10 @@ This comparison is based on its documentation, not a hands-on latency or quality
 
 ## Next steps and material gaps
 
-[Cleanup #35](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/35) corrects
-contribution examples and consolidates documentation/packaging. Current delivery
-and validation are linked from the [checkpoint](PROJECT-STATUS.md).
+[Cleanup #35](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/35) merged through
+[#44](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/44), correcting contribution
+examples and consolidating documentation/packaging. Current delivery and validation
+are linked from the [checkpoint](PROJECT-STATUS.md).
 
 The [settings-failure milestone](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/1)
 protects saved privacy choices and recovery without adding a backend or permission.

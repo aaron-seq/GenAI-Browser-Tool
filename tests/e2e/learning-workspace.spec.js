@@ -58,6 +58,7 @@ test('book questions find late evidence, remember the thread, and clear it', asy
   expect(requests).toHaveLength(1);
   expect(requests[0].messages[0].content).toContain('73 amber crystals');
   await page.locator('.chat-sources summary').click();
+  await expect(page.locator('.chat-sources p')).toBeInViewport({ ratio: 1 });
   await page.screenshot({
     path: testInfo.outputPath('learning-workspace.png'),
     fullPage: true,

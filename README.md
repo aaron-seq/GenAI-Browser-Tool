@@ -9,6 +9,12 @@ Page text goes directly to that provider; there is no application server or tele
 The screenshot uses an intercepted test response; it demonstrates the interface,
 not live model quality.
 
+The reading workspace keeps your source beside the tools, with light and dark
+themes and a compact popup. Use **Study guide** or **Quiz me** in Chat to start
+learning. Navigate task tabs with Left/Right, Home, and End; Tab moves into the
+selected panel. Summary length works with native radio-keyboard controls.
+See the [interface decisions and verification](docs/product/INTERFACE.md).
+
 ## Start here
 
 Clone or download this repository:
@@ -26,14 +32,14 @@ git clone https://github.com/aaron-seq/GenAI-Browser-Tool.git
    Generate a summary or ask a question.
 4. Choose **Open workspace** for a persistent reading tab. Import UTF-8 `.txt`
    or `.md` files there; importing alone sends no provider request.
-5. In Chat, choose **Make a study guide** or **Quiz me**, ask follow-up questions,
+5. In Chat, choose **Study guide** or **Quiz me**, ask follow-up questions,
    and expand the source passages to check the evidence.
 
 Installation is currently unpacked; there is no published Web Store release.
 
 ## What works
 
-- **Summary:** four styles and four lengths; matching saved results avoid another
+- **Summary:** four styles and three lengths; matching saved results avoid another
   provider call.
 - **Chat:** local keyword retrieval selects up to six passages across the document.
   Answers display source labels and excerpts.

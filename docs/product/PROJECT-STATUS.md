@@ -1,23 +1,24 @@
 # Project status and continuation
 
-Checkpoint: 27 October 2026 (Asia/Calcutta).
+Checkpoint: 28 October 2026 (Asia/Calcutta).
 [GitHub issues](https://github.com/aaron-seq/GenAI-Browser-Tool/issues) ·
 [private dashboard](https://github.com/users/aaron-seq/projects/6) ·
 [product / roadmap](PRODUCT.md).
 
 ## Current state
 
-- Cleanup branch: `codex/cleanup-docs-and-package`, based on main
-  [`6e82885`](https://github.com/aaron-seq/GenAI-Browser-Tool/commit/6e8288550ef4935684a6a44c87cbbed77b818d14).
-  [#35](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/35) tracks corrected
-  contribution examples, consolidated docs, package contents, and current validation.
+- Cleanup [#35](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/35) merged in
+  [#44](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/44), main
+  [`bd0e0f7`](https://github.com/aaron-seq/GenAI-Browser-Tool/commit/bd0e0f7e6a648117a801aea38a161ee2fad9f8ab).
+  Contribution examples, consolidated docs, and runtime packaging are updated.
 - [#42](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/42) (settings failures)
   and [#43](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/43) (CI actions)
   merged. The [post-merge CI run](https://github.com/aaron-seq/GenAI-Browser-Tool/actions/runs/40081266808)
   passed; historical details remain in [settings](../security-testing-evidence.md)
   and [CI evidence](../ci-modernization-evidence.md). No release/deployment is implied.
-- [UI draft #39](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/39) remains
-  separate; rebase and combined validation are required before integration.
+- [UI draft #39](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/39) is reconciled
+  with main bd0e0f7; [combined validation](INTERFACE.md#integration-verification--28-october-2026)
+  passes locally. It remains open for review before integration.
 - Restricted triage remains open under the owner's instruction. Its access-controlled
   GitHub record/private Project item is authoritative; no details belong here.
 
