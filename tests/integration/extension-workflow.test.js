@@ -70,6 +70,8 @@ describe('Extension workflow', () => {
     chrome.storage.sync.get.mockResolvedValue(CONFIGURED);
     chrome.storage.local.get.mockResolvedValue({});
     chrome.storage.local.set.mockReset().mockResolvedValue(undefined);
+    chrome.alarms.get.mockReset().mockResolvedValue(undefined);
+    chrome.alarms.create.mockReset().mockResolvedValue(undefined);
 
     await import('../../background.js');
     await vi.waitFor(() => {
@@ -1009,6 +1011,116 @@ describe('Extension workflow', () => {
   });
 
   describe('worker lifecycle', () => {
+    it('preserves the cleanup alarm scheduled time across worker restarts', async () => {
+      const scheduledTime = Date.now() + 30 * 60 * 1000;
+      let alarm = {
+        name: 'cleanupOldData',
+        periodInMinutes: 1440,
+        scheduledTime,
+      };
+      chrome.alarms.get.mockImplementation(async () => structuredClone(alarm));
+      chrome.alarms.create.mockImplementation(async (name, info) => {
+        alarm = { name, ...info, scheduledTime: Date.now() + 86400000 };
+      });
+      vi.clearAllMocks();
+
+      for (let wake = 0; wake < 2; wake++) {
+        vi.resetModules();
+        await import('../../background.js');
+      }
+
+      expect(alarm.scheduledTime).toBe(scheduledTime);
+      expect(chrome.alarms.create).not.toHaveBeenCalled();
+      expect(chrome.alarms.get).toHaveBeenCalledTimes(2);
+      expect(chrome.alarms.get).toHaveBeenCalledWith('cleanupOldData');
+    });
+
+    it('creates a missing cleanup alarm at startup', async () => {
+      vi.resetModules();
+      vi.clearAllMocks();
+      await import('../../background.js');
+
+      await vi.waitFor(() => {
+        expect(chrome.alarms.create).toHaveBeenCalledOnce();
+      });
+      expect(chrome.alarms.get).toHaveBeenCalledWith('cleanupOldData');
+      expect(chrome.alarms.create).toHaveBeenCalledWith('cleanupOldData', {
+        periodInMinutes: 1440,
+      });
+    });
+
+    it('registers listeners and routes messages while the alarm read is pending', async () => {
+      let finishRead;
+      chrome.alarms.get.mockReturnValueOnce(
+        new Promise(resolve => {
+          finishRead = resolve;
+        })
+      );
+      vi.resetModules();
+      vi.clearAllMocks();
+      await import('../../background.js');
+
+      try {
+        expect(chrome.runtime.onMessage.addListener).toHaveBeenCalledOnce();
+        expect(chrome.alarms.onAlarm.addListener).toHaveBeenCalledOnce();
+        expect(chrome.storage.onChanged.addListener).toHaveBeenCalledOnce();
+        expect(chrome.alarms.create).not.toHaveBeenCalled();
+        expect(await dispatch('GET_HISTORY', {})).toMatchObject({
+          success: true,
+          data: { summaries: [], conversations: [] },
+        });
+      } finally {
+        finishRead(undefined);
+      }
+      await vi.waitFor(() => {
+        expect(chrome.alarms.create).toHaveBeenCalledOnce();
+      });
+    });
+
+    it.each(['get', 'create'])(
+      'handles a rejected alarm %s and retries at the next worker start',
+      async method => {
+        const errorLog = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+        chrome.alarms[method].mockRejectedValueOnce(
+          new Error('fixture-private-alarm-detail')
+        );
+        vi.resetModules();
+        vi.clearAllMocks();
+
+        try {
+          await import('../../background.js');
+          await vi.waitFor(() => {
+            expect(errorLog).toHaveBeenCalledWith(
+              expect.stringContaining(
+                'History cleanup alarm initialization failed'
+              ),
+              ''
+            );
+          });
+          expect(await dispatch('GET_HISTORY', {})).toMatchObject({
+            success: true,
+          });
+          if (method === 'get')
+            expect(chrome.alarms.create).not.toHaveBeenCalled();
+          expect(JSON.stringify(errorLog.mock.calls)).not.toContain(
+            'fixture-private-alarm-detail'
+          );
+
+          vi.resetModules();
+          await import('../../background.js');
+          await vi.waitFor(() => {
+            expect(chrome.alarms.create).toHaveBeenCalledTimes(
+              method === 'create' ? 2 : 1
+            );
+          });
+        } finally {
+          errorLog.mockRestore();
+        }
+      }
+    );
+
     it.each(['install', 'update'])(
       'handles unavailable settings during %s without skipping first-install options',
       async reason => {
@@ -1088,6 +1200,7 @@ describe('Extension workflow', () => {
         ).toHaveBeenCalledOnce();
         expect(chrome.runtime.onInstalled.addListener).toHaveBeenCalledOnce();
         expect(chrome.alarms.onAlarm.addListener).toHaveBeenCalledOnce();
+        expect(chrome.alarms.create).toHaveBeenCalledOnce();
         const response = await dispatch('GET_HISTORY', {});
         expect(response).toMatchObject({
           success: true,

@@ -110,7 +110,7 @@ class BackgroundService {
     );
     chrome.commands.onCommand.addListener(this.handleCommand.bind(this));
     chrome.alarms.onAlarm.addListener(this.handleAlarm.bind(this));
-    chrome.alarms.create('cleanupOldData', { periodInMinutes: 1440 });
+    this.ensureCleanupAlarm();
     chrome.storage.onChanged.addListener((changes, area) => {
       const change = changes.user_preferences;
       if (area !== 'sync' || !change) return;
@@ -121,6 +121,18 @@ class BackgroundService {
         this.logger.error('Context menu update failed', error.message);
       });
     });
+  }
+
+  async ensureCleanupAlarm() {
+    try {
+      // Replacing a named alarm restarts its delay on every worker wake.
+      if (!(await chrome.alarms.get('cleanupOldData'))) {
+        await chrome.alarms.create('cleanupOldData', { periodInMinutes: 1440 });
+      }
+    } catch {
+      // Keep startup usable; a later worker start will check the alarm again.
+      this.logger.error('History cleanup alarm initialization failed');
+    }
   }
 
   // ---------------------------------------------------------------- messaging
