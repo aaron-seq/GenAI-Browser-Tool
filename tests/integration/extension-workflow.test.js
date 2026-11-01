@@ -161,6 +161,37 @@ describe('Extension workflow', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    it('stops queued sections after a fatal failure without merging or saving partial notes', async () => {
+      let finishSiblings;
+      const siblings = new Promise(resolve => {
+        finishSiblings = resolve;
+      });
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          headers: { get: () => null },
+          json: async () => ({ error: { message: 'Rejected section' } }),
+        })
+        .mockReturnValue(siblings);
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', {
+        content: 'x'.repeat(190000),
+      });
+
+      expect(response).toMatchObject({
+        success: false,
+        errorCode: 'PROVIDER_ERROR',
+        error: 'Anthropic Claude returned 400: Rejected section',
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      finishSiblings(CLAUDE_REPLY);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    });
+
     it('rejects empty content before spending an API call', async () => {
       global.fetch.mockResolvedValue(CLAUDE_REPLY);
 

@@ -786,13 +786,21 @@ export async function mapWithConcurrency(items, limit, fn) {
   /** @type {R[]} */
   const results = new Array(items.length);
   let next = 0;
+  let failed = false;
 
   const workers = Array.from(
     { length: Math.min(limit, items.length) },
     async () => {
-      while (next < items.length) {
+      while (!failed && next < items.length) {
         const index = next++;
-        results[index] = await fn(/** @type {T} */ (items[index]), index);
+        try {
+          results[index] = await fn(/** @type {T} */ (items[index]), index);
+        } catch (error) {
+          // Siblings may finish, but no queued work can produce a usable result.
+          // eslint-disable-next-line require-atomic-updates -- This flag only transitions to true.
+          failed = true;
+          throw error;
+        }
       }
     }
   );
