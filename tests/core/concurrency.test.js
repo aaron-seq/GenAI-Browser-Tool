@@ -47,6 +47,26 @@ describe('mapWithConcurrency', () => {
     await expect(mapWithConcurrency([1, 2], 8, async n => n * 2)).resolves.toEqual([2, 4]);
   });
 
+  it('does not claim queued items after a sibling fails', async () => {
+    let release;
+    const pending = new Promise(resolve => {
+      release = resolve;
+    });
+    const seen = [];
+    const failure = new Error('section failed');
+    const result = mapWithConcurrency([0, 1, 2, 3, 4, 5], 3, async item => {
+      seen.push(item);
+      if (item === 0) throw failure;
+      await pending;
+      return item;
+    });
+    await expect(result).rejects.toBe(failure);
+    expect(seen).toEqual([0, 1, 2]);
+    release();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(seen).toEqual([0, 1, 2]);
+  });
+
   it('propagates a rejection', async () => {
     await expect(
       mapWithConcurrency([1, 2, 3], 2, async n => {

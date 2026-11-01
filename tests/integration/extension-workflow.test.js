@@ -96,6 +96,37 @@ describe('Extension workflow', () => {
       );
     });
 
+    it('stops queued section requests after a terminal provider error', async () => {
+      let release;
+      const pending = new Promise(resolve => {
+        release = resolve;
+      });
+      global.fetch
+        .mockReset()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          statusText: 'Bad Request',
+          json: async () => ({ error: { message: 'section rejected' } }),
+        })
+        .mockImplementation(async () => {
+          await pending;
+          return CLAUDE_REPLY;
+        });
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', {
+        content: 'word '.repeat(38000),
+        summaryType: 'key-points',
+      });
+      expect(response.success).toBe(false);
+      expect(response.errorCode).toBe('PROVIDER_ERROR');
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      release();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    });
+
     it('persists the summary to local history', async () => {
       global.fetch.mockResolvedValue(CLAUDE_REPLY);
 
