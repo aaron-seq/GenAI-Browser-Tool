@@ -265,8 +265,10 @@ class PopupInterface {
       url: content.url,
       content: content.mainText,
     });
-    if (this.pageContent !== content || this.chatGeneration !== chatGeneration)
-      return;
+    if (this.pageContent !== content) return;
+    if (response.success && response.data.summaries?.[0] && !this.lastSummary)
+      this.renderSummary(response.data.summaries[0], true);
+    if (this.chatGeneration !== chatGeneration) return;
     this.chatHistoryPending = false;
     const conversations = response.success
       ? response.data.conversations || []
@@ -280,8 +282,6 @@ class PopupInterface {
         { role: 'assistant', content: exchange.answer }
       );
     }
-    if (response.success && response.data.summaries?.[0])
-      this.renderSummary(response.data.summaries[0], true);
     setText(
       'chat-memory-status',
       !response.success
@@ -539,6 +539,7 @@ class PopupInterface {
   }
 
   async extractPageLinks() {
+    const content = this.pageContent;
     if (!this.sourceTabId) {
       this.showToolsResult(
         '<p>Links are available for a source web page. Imported text has no live page links.</p>'
@@ -550,6 +551,7 @@ class PopupInterface {
       const response = await chrome.tabs.sendMessage(this.sourceTabId, {
         action: 'extractLinks',
       });
+      if (this.pageContent !== content) return;
       if (!response?.success)
         throw new Error(response?.error || 'Could not read links');
 
@@ -565,7 +567,8 @@ class PopupInterface {
     } catch (error) {
       /** @type {any} */
       const err = error;
-      this.showToolsResult(`<p>${escapeHtml(err.message)}</p>`);
+      if (this.pageContent === content)
+        this.showToolsResult(`<p>${escapeHtml(err.message)}</p>`);
     }
   }
 

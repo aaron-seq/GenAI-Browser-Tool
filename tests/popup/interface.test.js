@@ -133,6 +133,35 @@ describe('popup', () => {
 
   describe('learning workspace', () => {
     it.each([true, false])(
+      'ignores old source links after import (success=%s)',
+      async success => {
+        const pending = deferred();
+        await openPopup();
+        chrome.tabs.sendMessage.mockReturnValue(pending.promise);
+        el('extract-links-btn').click();
+        await vi.waitFor(() =>
+          expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, {
+            action: 'extractLinks',
+          })
+        );
+        await importBook();
+        pending.resolve(
+          success
+            ? {
+                success: true,
+                data: [
+                  { href: 'https://old.example/', text: 'Old source link' },
+                ],
+              }
+            : { success: false, error: 'Old source error' }
+        );
+        await settleResponses();
+        expect(el('tools-results').style.display).toBe('none');
+        expect(text('tools-results')).not.toMatch(/Old source/);
+      }
+    );
+
+    it.each([true, false])(
       'ignores a previous document analysis response after import (success=%s)',
       async success => {
         const pending = deferred();
@@ -249,6 +278,90 @@ describe('popup', () => {
           sentPayload('ANSWER_CONTEXTUAL_QUESTION').conversationHistory
         )
       ).not.toContain('Old');
+    });
+
+    it.each(['send', 'clear'])(
+      'restores the saved summary when %s invalidates only pending chat history',
+      async action => {
+        const pending = deferred();
+        await openPopup({
+          waitForReady: false,
+          overrides: {
+            GET_DOCUMENT_HISTORY: pending.promise,
+            CLEAR_DOCUMENT_CHAT: { success: true, data: { removed: 1 } },
+            ANSWER_CONTEXTUAL_QUESTION: {
+              success: true,
+              data: { answer: 'Fresh answer' },
+            },
+          },
+        });
+        await vi.waitFor(() =>
+          expect(sentPayload('GET_DOCUMENT_HISTORY')).toBeDefined()
+        );
+        if (action === 'send') {
+          el('chat-input').value = 'Fresh question';
+          el('send-chat-btn').click();
+          await vi.waitFor(() =>
+            expect(text('chat-history')).toContain('Fresh answer')
+          );
+        } else {
+          el('clear-chat-btn').click();
+          await vi.waitFor(() =>
+            expect(text('chat-memory-status')).toContain('Chat cleared')
+          );
+        }
+        pending.resolve({
+          success: true,
+          data: {
+            summaries: [
+              { summary: 'Saved summary', provider: 'test', model: 'fixture' },
+            ],
+            conversations: [{ question: 'Old question', answer: 'Old answer' }],
+            memoryEnabled: true,
+          },
+        });
+        await vi.waitFor(() =>
+          expect(text('summary-content')).toContain('Saved summary')
+        );
+        expect(text('chat-history')).not.toContain('Old answer');
+      }
+    );
+
+    it('keeps a freshly generated summary when an older history snapshot arrives', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: {
+          GET_DOCUMENT_HISTORY: pending.promise,
+          GENERATE_CONTENT_SUMMARY: {
+            success: true,
+            data: {
+              summary: 'Fresh summary',
+              provider: 'test',
+              model: 'fixture',
+            },
+          },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(sentPayload('GET_DOCUMENT_HISTORY')).toBeDefined()
+      );
+      el('generate-summary-btn').click();
+      await vi.waitFor(() =>
+        expect(text('summary-content')).toContain('Fresh summary')
+      );
+      pending.resolve({
+        success: true,
+        data: {
+          summaries: [
+            { summary: 'Old summary', provider: 'test', model: 'fixture' },
+          ],
+          conversations: [],
+          memoryEnabled: true,
+        },
+      });
+      await settleResponses();
+      expect(text('summary-content')).toBe('Fresh summary');
     });
 
     it('allows pending saved history to restore after clearing fails', async () => {
