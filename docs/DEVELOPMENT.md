@@ -22,7 +22,8 @@ flowchart LR
 A summary extracts page text, checks the saved-result key, then either makes one
 request or summarizes up to eight 24,000-character sections (three concurrently)
 and merges the notes. Any failed section fails the task; partial results are not
-presented as complete. Errors retain their code and message.
+presented as complete. A failed section stops queued sections from starting;
+already-started requests may settle. Errors retain their code and message.
 
 ## Source map
 

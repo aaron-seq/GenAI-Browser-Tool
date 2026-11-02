@@ -8,6 +8,8 @@ Checkpoint: 2 November 2026 (Asia/Calcutta).
 
 [Draft PR #39](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/39) combines the
 reading-interface work (#36) with the seven verified reliability fixes (#46–#52).
+Community [PR #53](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/53), which
+addresses the same #49 failure, is incorporated with its contributor history.
 [Milestone 3](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/3) requires
 preserved settings edits, document/chat response isolation, stopped queued work
 after failure, stable cleanup scheduling, bounded response bodies, and visible-text

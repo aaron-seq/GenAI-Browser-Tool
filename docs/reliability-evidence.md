@@ -25,6 +25,14 @@ stale popup language payloads, collapsed disclosures and paragraph chunking gaps
 Each was reproduced, corrected, and rechecked, including actual Chromium diagnostics.
 Agent review is not independent human approval.
 
+The final open-PR check also found community
+[PR #53](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/53) at
+[4d31f67](https://github.com/imshah-id/GenAI-Browser-Tool/commit/4d31f6773f58b4803f30b80ccfe7dd73369a32fc),
+which implements the same #49 stop flag. Its commit is incorporated into this
+delivery with its scheduling documentation. Duplicate tests are consolidated into
+the existing mapper/worker regressions (three calls after failure, original error,
+no partial merge/history). Runtime source and the validated tests remain unchanged.
+
 ## Validation — 2 November 2026
 
 The primary session ran combined checks on source revision
