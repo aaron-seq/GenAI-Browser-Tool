@@ -58,6 +58,7 @@ and this extension's sender ID; the [router](../background.js) rejects unknown a
 | `EXTRACT_KEY_INSIGHTS`, `GENERATE_SMART_TAGS`, `EXTRACT_ENTITIES` | `text`; requested analysis                                                                                 |
 | `EXTRACT_PAGE_CONTENT`                                            | `tabId`, falling back to sender tab; extraction                                                            |
 | `GET_USER_PREFERENCES`, `UPDATE_USER_PREFERENCES`                 | Read settings or merge a settings payload                                                                  |
+| `RESET_USER_PREFERENCES`                                          | Confirmed reset; replace settings, including API keys, with defaults                                       |
 | `GET_PROVIDER_STATUS`                                             | Selected provider and configured-key status                                                                |
 | `TEST_PROVIDER_CONNECTION`                                        | Entered `provider`, `apiKey`, optional `model`; 16-token request, 10s timeout, no retries; never saves key |
 | `GET_DOCUMENT_HISTORY`                                            | `url`, `content`; summary, up to 30 exchanges, `memoryEnabled`                                             |
@@ -74,6 +75,9 @@ The content script separately accepts `{ action: 'extractContent' }`.
 
 `ConfigurationManager` owns `chrome.storage.sync.user_preferences`:
 keys, models, provider, summary/language/theme preferences, and feature flags.
+Options and popup send mutations to one worker manager. Initialization, updates,
+and confirmed resets share a recoverable queue; reads in Options remain local.
+This orders this extension's writes, not updates from other synced devices.
 Keys are plaintext at the API level, sync with the browser profile, and are
 excluded from exports. Unreadable preferences cannot authorize optional effects
 or replacement updates. See [security and data handling](SECURITY.md).
@@ -84,6 +88,7 @@ or replacement updates. See [security and data handling](SECURITY.md).
 worker, including clear-chat and cleanup. A failed mutation read propagates
 instead of overwriting history with an empty list; read-only access retains its
 logged fallback.
+Worker startup preserves an existing cleanup alarm instead of resetting its delay.
 
 ### Document retrieval, cache, and memory
 
@@ -111,6 +116,11 @@ warning, without another provider request.
 popup startup queries the active tab. User-selected UTF-8 text/Markdown imports
 validate 8 MB and 2,000,000-character limits. Their identity uses
 `local-document:`, filename, and content hash. Extraction/import sends no AI request.
+Extraction reads visible DOM text without changing the source page. Pending
+extraction, analysis, and links cannot populate a subsequently imported document.
+Chat restoration cannot undo a successful clear or a new exchange; saved summaries
+restore independently without replacing a fresh result. Provider deadlines cover
+response headers and body consumption; fatal section failures stop queued work.
 
 ## Local validation
 

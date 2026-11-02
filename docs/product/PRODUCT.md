@@ -1,6 +1,6 @@
 # Reading and learning workspace
 
-Updated 28 October 2026 for the unreleased interface revision. This is the maintained product brief;
+Updated 2 November 2026 for the unreleased interface/reliability revision. This is the maintained product brief;
 the [supplied engineering brief](ENGINEERING-BRIEF.md) is preserved separately.
 
 ## Objective
@@ -53,8 +53,12 @@ Its implementation merged through [PR #42](https://github.com/aaron-seq/GenAI-Br
 see the [checkpoint](PROJECT-STATUS.md)
 and [verification record](../security-testing-evidence.md). The separate
 [reading-interface draft #39](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/39)
-also awaits review. The [private dashboard](https://github.com/users/aaron-seq/projects/6)
-tracks both without counting an issue and its PR as separate outcomes.
+now also carries the seven reliability fixes under
+[milestone 3](https://github.com/aaron-seq/GenAI-Browser-Tool/milestone/3).
+The [bug board](https://github.com/users/aaron-seq/projects/10) tracks #46–#52;
+the [delivery dashboard](https://github.com/users/aaron-seq/projects/6) retains
+the remaining verification and tooling work, including the new published
+[dependency-advisory follow-up #54](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/54).
 
 CI action and runner validation is delivered through
 [PR #43 / issue #32](https://github.com/aaron-seq/GenAI-Browser-Tool/issues/32),

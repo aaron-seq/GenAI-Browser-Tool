@@ -5,6 +5,10 @@ replaces the gradient/emoji interface with a quiet reading desk. The source stay
 beside the five tools on wide screens and above them on narrow screens. Task
 labels describe actions; provider, memory, coverage, and source excerpts stay visible.
 
+Current combined UI/reliability validation is recorded in the
+[reliability evidence](../reliability-evidence.md); dated results below describe
+the original interface revisions.
+
 ![Summary workspace](images/reading-summary.png)
 
 ## Design decisions

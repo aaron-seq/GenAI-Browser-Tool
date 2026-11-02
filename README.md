@@ -14,6 +14,9 @@ themes and a compact popup. Use **Study guide** or **Quiz me** in Chat to start
 learning. Navigate task tabs with Left/Right, Home, and End; Tab moves into the
 selected panel. Summary length works with native radio-keyboard controls.
 See the [interface decisions and verification](docs/product/INTERFACE.md).
+The combined interface and reliability delivery is tracked in
+[PR #39](https://github.com/aaron-seq/GenAI-Browser-Tool/pull/39) and the
+[current checkpoint](docs/product/PROJECT-STATUS.md).
 
 ## Start here
 
