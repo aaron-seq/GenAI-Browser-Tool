@@ -104,6 +104,45 @@ test.describe('options page', () => {
 });
 
 test.describe('content extraction', () => {
+  test('extracts visible blocks and inline text without changing the source DOM', async ({
+    context,
+    extensionId,
+  }) => {
+    const fixtureUrl = `${FIXTURE_URL}?visible-text`;
+    await context.route(fixtureUrl, route =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><head><style>.hidden{display:none}</style></head><body><article><p>First <strong>visible</strong> paragraph.</p><p class="hidden">Hidden synthetic text.</p><p>Second visible paragraph.</p><p>Inline <em>text</em> stays together.</p><nav>Excluded navigation.</nav></article></body></html>`,
+      })
+    );
+    const contentPage = await context.newPage();
+    await contentPage.goto(fixtureUrl);
+    const before = await contentPage
+      .locator('html')
+      .evaluate(root => root.outerHTML);
+
+    const extensionPage = await context.newPage();
+    await extensionPage.goto(`chrome-extension://${extensionId}/options.html`);
+    await contentPage.bringToFront();
+    const tabId = await activeTabId(extensionPage);
+    const response = await extensionPage.evaluate(
+      id =>
+        chrome.runtime.sendMessage({
+          actionType: 'EXTRACT_PAGE_CONTENT',
+          payload: { tabId: id },
+        }),
+      tabId
+    );
+
+    expect(response.success).toBe(true);
+    expect(response.data.mainText).toBe(
+      'First visible paragraph.\nSecond visible paragraph.\nInline text stays together.'
+    );
+    expect(
+      await contentPage.locator('html').evaluate(root => root.outerHTML)
+    ).toBe(before);
+  });
+
   test('content script extracts article text and drops navigation chrome', async ({
     context,
     extensionId,
