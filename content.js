@@ -119,15 +119,19 @@ class PageContentExtractor {
       const style = styleFor(parent);
       if (style.display === 'none' || style.contentVisibility === 'hidden')
         return '';
+      if (parent.tagName === 'DETAILS' && !parent.hasAttribute('open')) {
+        const summary = parent.querySelector(':scope > summary');
+        if (!summary?.contains(mainElement)) return '';
+      }
     }
 
     /** @type {string[]} */
     const parts = [];
-    const lineBreak = () => {
+    const lineBreak = (count = 1) => {
       const last = parts.at(-1);
-      if (last?.endsWith('\n')) return;
+      if (last?.endsWith('\n'.repeat(count))) return;
       if (last) parts[parts.length - 1] = last.trimEnd();
-      parts.push('\n');
+      parts.push('\n'.repeat(count));
     };
     /** @param {Element} element @returns {void} */
     const visit = element => {
@@ -145,8 +149,17 @@ class PageContentExtractor {
       const block = /^(block|flow-root|list-item|flex|grid|table)/.test(
         style.display
       );
-      if (block) lineBreak();
-      for (const child of element.childNodes) {
+      // Blank lines retain the paragraph boundaries consumed by summary chunking.
+      const breaks = element.tagName === 'P' ? 2 : 1;
+      if (block) lineBreak(breaks);
+      // Closed details render only their first direct summary, not the body.
+      const collapsed =
+        element.tagName === 'DETAILS' && !element.hasAttribute('open');
+      const children = collapsed
+        ? [element.querySelector(':scope > summary')]
+        : element.childNodes;
+      for (const child of children) {
+        if (!child) continue;
         if (child.nodeType === Node.ELEMENT_NODE) {
           // visibility can be explicitly restored by a child of a hidden parent.
           visit(/** @type {Element} */ (child));
@@ -159,7 +172,7 @@ class PageContentExtractor {
           if (text) parts.push(text);
         }
       }
-      if (block) lineBreak();
+      if (block) lineBreak(breaks);
     };
     visit(mainElement);
     return parts.join('').trim();

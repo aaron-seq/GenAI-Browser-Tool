@@ -79,7 +79,7 @@ describe('extractContent', () => {
     const { data } = await send({ action: 'extractContent' });
 
     expect(data.mainText).toBe(
-      'First visible paragraph.\nSecond paragraph.\nCooperate with inline text.'
+      'First visible paragraph.\n\nSecond paragraph.\n\nCooperate with inline text.'
     );
   });
 
@@ -121,7 +121,58 @@ describe('extractContent', () => {
 
     const { data } = await send({ action: 'extractContent' });
 
-    expect(data.mainText).toBe('First line.\nSecond line.\none  two\n  three');
+    expect(data.mainText).toBe(
+      'First line.\nSecond line.\n\none  two\n  three'
+    );
+  });
+
+  it.each([
+    {
+      label: 'closed, open, and nested details',
+      markup:
+        '<article><details><summary>Closed summary.</summary><p>Hidden closed body.</p><summary>Hidden second summary.</summary><details open><summary>Hidden nested summary.</summary><p>Hidden nested body.</p></details></details><details open><summary>Open summary.</summary><p>Open body.</p><details><summary>Nested closed summary.</summary><p>Hidden nested closed body.</p></details></details></article>',
+      expected:
+        'Closed summary.\nOpen summary.\n\nOpen body.\n\nNested closed summary.',
+    },
+    {
+      label: 'a selected article inside a closed details body',
+      markup:
+        '<details><summary>Visible summary.</summary><article>Hidden selected article.</article></details>',
+      expected: '',
+    },
+    {
+      label: 'a selected article inside the first summary',
+      markup:
+        '<details><summary><article>Visible selected article.</article></summary><p>Hidden body.</p></details>',
+      expected: 'Visible selected article.',
+    },
+    {
+      label: 'a selected article inside a later summary',
+      markup:
+        '<details><summary>First summary.</summary><summary><article>Hidden selected article.</article></summary></details>',
+      expected: '',
+    },
+    {
+      label:
+        'a selected article inside nested open details under a closed ancestor',
+      markup:
+        '<details><summary>Outer summary.</summary><details open><summary>Inner summary.</summary><article>Hidden selected article.</article></details></details>',
+      expected: '',
+    },
+    {
+      label: 'closed details with no summary',
+      markup:
+        '<article><details>Hidden text.<p>Hidden body.</p></details></article>',
+      expected: '',
+    },
+  ])('respects $label', async ({ markup, expected }) => {
+    document.body.innerHTML = markup;
+    const before = document.documentElement.outerHTML;
+
+    const { data } = await send({ action: 'extractContent' });
+
+    expect(data.mainText).toBe(expected);
+    expect(document.documentElement.outerHTML).toBe(before);
   });
 
   it('strips navigation, scripts, ads, and comments from the extracted text', async () => {
