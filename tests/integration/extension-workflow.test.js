@@ -1010,6 +1010,84 @@ describe('Extension workflow', () => {
     });
   });
 
+  describe('settings writes', () => {
+    let stored;
+    beforeEach(() => {
+      stored = structuredClone(CONFIGURED);
+      chrome.storage.sync.get.mockImplementation(async () =>
+        structuredClone(stored)
+      );
+      chrome.storage.sync.set.mockImplementation(async values => {
+        Object.assign(stored, structuredClone(values));
+      });
+    });
+
+    it('preserves overlapping edits received by the shared worker writer', async () => {
+      const results = await Promise.all([
+        dispatch('UPDATE_USER_PREFERENCES', { theme: 'dark' }),
+        dispatch('UPDATE_USER_PREFERENCES', {
+          features: { notifications: false },
+        }),
+        dispatch('UPDATE_USER_PREFERENCES', {
+          features: { saveHistory: false },
+        }),
+        dispatch('UPDATE_USER_PREFERENCES', {
+          models: { openai: 'fixture-model' },
+        }),
+      ]);
+      expect(results.every(response => response.success)).toBe(true);
+      expect(stored.user_preferences).toMatchObject({
+        theme: 'dark',
+        features: { notifications: false, saveHistory: false },
+        models: { openai: 'fixture-model' },
+        apiKeys: CONFIGURED.user_preferences.apiKeys,
+      });
+    });
+
+    it('replaces preferences on explicit reset without requiring another read', async () => {
+      chrome.storage.sync.get.mockRejectedValue(
+        new Error('storage unavailable')
+      );
+      const result = await dispatch('RESET_USER_PREFERENCES', {});
+      expect(result.success).toBe(true);
+      expect(result.data.apiKeys).toEqual({});
+      expect(result.data.preferredProvider).toBe('anthropic');
+      expect(stored.user_preferences.apiKeys).toEqual({});
+      expect(stored.user_preferences.models).toEqual({});
+    });
+
+    it('orders reset before a later edit and recovers after a failed reset', async () => {
+      const [reset, update] = await Promise.all([
+        dispatch('RESET_USER_PREFERENCES', {}),
+        dispatch('UPDATE_USER_PREFERENCES', { theme: 'dark' }),
+      ]);
+      expect(reset.success).toBe(true);
+      expect(update.success).toBe(true);
+      expect(stored.user_preferences).toMatchObject({
+        apiKeys: {},
+        theme: 'dark',
+      });
+      expect(stored.user_preferences.apiKeys).toEqual({});
+
+      chrome.storage.sync.set.mockRejectedValueOnce(
+        new Error('fixture write failure')
+      );
+      const [failedReset, later] = await Promise.all([
+        dispatch('RESET_USER_PREFERENCES', {}),
+        dispatch('UPDATE_USER_PREFERENCES', { summaryType: 'tldr' }),
+      ]);
+      expect(failedReset).toMatchObject({
+        success: false,
+        error: 'fixture write failure',
+      });
+      expect(later.success).toBe(true);
+      expect(stored.user_preferences).toMatchObject({
+        theme: 'dark',
+        summaryType: 'tldr',
+      });
+    });
+  });
+
   describe('worker lifecycle', () => {
     it('preserves the cleanup alarm scheduled time across worker restarts', async () => {
       const scheduledTime = Date.now() + 30 * 60 * 1000;

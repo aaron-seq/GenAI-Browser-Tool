@@ -20,7 +20,8 @@ test('failed option reads preserve stored settings, report errors, and recover o
   };
   await seedPreferences(page, prefs);
   await page.reload();
-  await page.evaluate(() => {
+  const worker = context.serviceWorkers()[0];
+  await worker.evaluate(() => {
     const read = chrome.storage.sync.get.bind(chrome.storage.sync);
     chrome.storage.sync.get = () => {
       chrome.storage.sync.get = read;

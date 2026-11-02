@@ -25,6 +25,8 @@ const STORAGE_KEY = 'user_preferences';
  */
 export class ConfigurationManager {
   constructor() {
+    /** @type {Promise<any>} */
+    this.writes = Promise.resolve();
     this.defaultSettings = {
       preferredProvider: 'anthropic',
       /** @type {Record<string, string>} */
@@ -53,10 +55,12 @@ export class ConfigurationManager {
    * distinguish a first run from a later one.
    */
   async initialize() {
-    const stored = await chrome.storage.sync.get([STORAGE_KEY]);
-    if (!stored[STORAGE_KEY]) {
-      await this.setUserPreferences(this.defaultSettings);
-    }
+    return this.serializeWrite(async () => {
+      const stored = await chrome.storage.sync.get([STORAGE_KEY]);
+      if (!stored[STORAGE_KEY]) {
+        await chrome.storage.sync.set({ [STORAGE_KEY]: this.defaultSettings });
+      }
+    });
   }
 
   /**
@@ -102,22 +106,41 @@ export class ConfigurationManager {
    * @returns {Promise<any>}
    */
   async updateUserPreferences(newSettings) {
-    const current = await this.getUserPreferences();
-    const updated = {
-      ...current,
-      ...newSettings,
-      apiKeys: { ...current.apiKeys, ...(newSettings.apiKeys || {}) },
-      models: { ...current.models, ...(newSettings.models || {}) },
-      features: { ...current.features, ...(newSettings.features || {}) },
-      updatedAt: Date.now(),
-    };
-    await chrome.storage.sync.set({ [STORAGE_KEY]: updated });
-    return updated;
+    return this.serializeWrite(async () => {
+      const current = await this.getUserPreferences();
+      const updated = {
+        ...current,
+        ...newSettings,
+        apiKeys: { ...current.apiKeys, ...(newSettings.apiKeys || {}) },
+        models: { ...current.models, ...(newSettings.models || {}) },
+        features: { ...current.features, ...(newSettings.features || {}) },
+        updatedAt: Date.now(),
+      };
+      await chrome.storage.sync.set({ [STORAGE_KEY]: updated });
+      return updated;
+    });
   }
 
   /** @param {any} settings */
   async setUserPreferences(settings) {
-    await chrome.storage.sync.set({ [STORAGE_KEY]: settings });
+    return this.serializeWrite(async () => {
+      await chrome.storage.sync.set({ [STORAGE_KEY]: settings });
+      return this.withDefaults(settings);
+    });
+  }
+
+  /**
+   * All settings writes run through the worker's manager. Read-modify-write,
+   * first-run seeding, and replacement/reset must share the same ordering.
+   * A failed operation reaches its caller without blocking later writes.
+   * @template T
+   * @param {() => Promise<T>} write
+   * @returns {Promise<T>}
+   */
+  serializeWrite(write) {
+    const operation = this.writes.then(write, write);
+    this.writes = operation;
+    return operation;
   }
 
   /**

@@ -232,6 +232,11 @@ class BackgroundService {
       case 'UPDATE_USER_PREFERENCES':
         return this.configManager.updateUserPreferences(payload);
 
+      case 'RESET_USER_PREFERENCES':
+        return this.configManager.setUserPreferences(
+          this.configManager.defaultSettings
+        );
+
       case 'GET_PROVIDER_STATUS':
         return this.configManager.getProviderStatus();
 
