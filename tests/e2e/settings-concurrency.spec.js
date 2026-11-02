@@ -5,6 +5,47 @@ import {
   seedPreferences,
 } from './fixtures.js';
 
+test('a stale popup language control preserves a newer Settings edit', async ({
+  context,
+  extensionId,
+}) => {
+  const options = await context.newPage();
+  await options.goto(`chrome-extension://${extensionId}/options.html`);
+  await seedPreferences(options, {
+    ...CONFIGURED_PREFERENCES,
+    sourceLanguage: 'auto',
+    targetLanguage: 'en',
+  });
+  await options.reload();
+  const popup = await context.newPage();
+  await popup.goto(`chrome-extension://${extensionId}/popup.html?workspace=1`);
+  await popup.locator('[data-tab="translate"]').click();
+  await expect(popup.locator('#source-language')).toHaveValue('auto');
+  await options.locator('[data-section="features"]').click();
+  await options.locator('#source-language-pref').selectOption('fr');
+  await expect(options.locator('#save-indicator .text')).toHaveText(
+    'Settings saved'
+  );
+  await popup.locator('#target-language').selectOption('es');
+  await expect
+    .poll(
+      async () =>
+        (
+          await popup.evaluate(
+            async () =>
+              (await chrome.storage.sync.get('user_preferences'))
+                .user_preferences
+          )
+        ).targetLanguage
+    )
+    .toBe('es');
+  const saved = await options.evaluate(
+    async () =>
+      (await chrome.storage.sync.get('user_preferences')).user_preferences
+  );
+  expect(saved).toMatchObject({ sourceLanguage: 'fr', targetLanguage: 'es' });
+});
+
 /** Hold writes without replacing Chrome's reads or final persistence. */
 async function holdWrites(surface) {
   await surface.evaluate(() => {

@@ -718,16 +718,34 @@ describe('popup', () => {
       expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('persists translation preferences on change', async () => {
+    it.each([
+      ['target-language', 'targetLanguage'],
+      ['source-language', 'sourceLanguage'],
+    ])(
+      'persists only the changed translation preference: %s',
+      async (id, field) => {
+        await openPopup({
+          overrides: { UPDATE_USER_PREFERENCES: { success: true } },
+        });
+        el(id).value = 'fr';
+        el(id).dispatchEvent(new Event('change'));
+        await vi.waitFor(() =>
+          expect(sentPayload('UPDATE_USER_PREFERENCES')).toEqual({
+            [field]: 'fr',
+          })
+        );
+      }
+    );
+
+    it('persists both languages after an explicit swap', async () => {
       await openPopup({
-        overrides: { UPDATE_USER_PREFERENCES: { success: true } },
+        preferences: { sourceLanguage: 'fr', targetLanguage: 'en' },
       });
-      el('target-language').value = 'fr';
-      el('target-language').dispatchEvent(new Event('change'));
+      el('swap-languages').click();
       await vi.waitFor(() =>
         expect(sentPayload('UPDATE_USER_PREFERENCES')).toEqual({
+          sourceLanguage: 'en',
           targetLanguage: 'fr',
-          sourceLanguage: 'auto',
         })
       );
     });

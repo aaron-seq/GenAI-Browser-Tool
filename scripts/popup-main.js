@@ -152,8 +152,12 @@ class PopupInterface {
 
     on('translate-btn', 'click', () => this.translateContent());
     on('swap-languages', 'click', () => this.swapLanguages());
-    on('source-language', 'change', () => this.persistLanguages());
-    on('target-language', 'change', () => this.persistLanguages());
+    on('source-language', 'change', () =>
+      this.persistLanguages('sourceLanguage')
+    );
+    on('target-language', 'change', () =>
+      this.persistLanguages('targetLanguage')
+    );
     on('copy-translation-btn', 'click', () =>
       this.copyToClipboard('translation-content')
     );
@@ -342,11 +346,18 @@ class PopupInterface {
     });
   }
 
-  async persistLanguages() {
-    const response = await this.send('UPDATE_USER_PREFERENCES', {
+  /** @param {'sourceLanguage' | 'targetLanguage'} [changed] */
+  async persistLanguages(changed) {
+    const languages = {
       targetLanguage: value('target-language'),
       sourceLanguage: value('source-language'),
-    });
+    };
+    // A single control change must not overwrite a sibling edited in Settings.
+    // An explicit swap changes both controls and therefore persists both.
+    const response = await this.send(
+      'UPDATE_USER_PREFERENCES',
+      changed ? { [changed]: languages[changed] } : languages
+    );
     if (!response.success) this.showToast(response.error, 'error');
   }
 
