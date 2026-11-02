@@ -21,6 +21,9 @@ class PopupInterface {
     /** @type {any} */
     this.preferences = null;
     this.warnedAboutChatTruncation = false;
+    this.documentGeneration = 0;
+    this.chatGeneration = 0;
+    this.chatHistoryPending = false;
     /** @type {number | null} */
     this.sourceTabId = null;
     const params = new URLSearchParams(window.location.search);
@@ -31,17 +34,20 @@ class PopupInterface {
   }
 
   async initialize() {
+    const generation = this.documentGeneration;
     this.setupEventListeners();
     try {
       await this.applyPreferences();
       await this.updateProviderStatus();
-      await this.extractCurrentPageContent();
+      if (this.documentGeneration !== generation) return;
+      await this.extractCurrentPageContent(generation);
     } catch (error) {
       const err = /** @type {Error} */ (error);
+      if (this.documentGeneration !== generation) return;
       this.setPageInfo('Could not read this document', err.message);
       this.showToast(err.message, 'error');
     } finally {
-      this.hideLoading();
+      if (!this.isProcessing) this.hideLoading();
     }
   }
 
@@ -184,7 +190,8 @@ class PopupInterface {
 
   // ------------------------------------------------------------------ content
 
-  async extractCurrentPageContent() {
+  /** @param {number} [generation] */
+  async extractCurrentPageContent(generation = this.documentGeneration) {
     const requestedTab = Number(
       new URLSearchParams(window.location.search).get('tabId')
     );
@@ -192,6 +199,8 @@ class PopupInterface {
       Number.isSafeInteger(requestedTab) && requestedTab > 0
         ? await chrome.tabs.get(requestedTab)
         : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+
+    if (this.documentGeneration !== generation) return;
 
     if (!activeTab?.id || (activeTab.url && !/^https?:/.test(activeTab.url))) {
       this.setPageInfo(
@@ -207,17 +216,22 @@ class PopupInterface {
     const response = await this.send('EXTRACT_PAGE_CONTENT', {
       tabId: activeTab.id,
     });
+    if (this.documentGeneration !== generation) return;
     if (!response.success) {
       this.setPageInfo(activeTab.title || 'Untitled', response.error);
       return;
     }
 
-    await this.acceptDocument(response.data);
+    await this.acceptDocument(response.data, generation);
   }
 
-  /** @param {any} content */
-  async acceptDocument(content) {
+  /** @param {any} content @param {number} [generation] */
+  async acceptDocument(content, generation) {
     validateDocument(content.mainText);
+    if (generation === undefined) generation = ++this.documentGeneration;
+    if (generation !== this.documentGeneration) return;
+    const chatGeneration = ++this.chatGeneration;
+    this.chatHistoryPending = true;
     this.pageContent = content;
     this.conversationHistory = [];
     this.lastSummary = null;
@@ -251,7 +265,9 @@ class PopupInterface {
       url: content.url,
       content: content.mainText,
     });
-    if (this.pageContent !== content) return;
+    if (this.pageContent !== content || this.chatGeneration !== chatGeneration)
+      return;
+    this.chatHistoryPending = false;
     const conversations = response.success
       ? response.data.conversations || []
       : [];
@@ -318,6 +334,8 @@ class PopupInterface {
         content: this.pageContent.mainText,
       });
       if (!response.success) throw new Error(response.error);
+      this.chatGeneration += 1;
+      this.chatHistoryPending = false;
       this.conversationHistory = [];
       setHtml('chat-history', '');
       setText('chat-memory-status', 'Chat cleared for this document');
@@ -374,6 +392,11 @@ class PopupInterface {
     const question = value('chat-input').trim();
     if (!question || !this.requireContent()) return;
 
+    this.chatGeneration += 1;
+    if (this.chatHistoryPending) {
+      this.chatHistoryPending = false;
+      setText('chat-memory-status', 'Current conversation');
+    }
     setValue('chat-input', '');
     this.addChatMessage('user', question);
 
@@ -447,6 +470,7 @@ class PopupInterface {
   /** @param {string} type */
   async runAnalysis(type) {
     if (!this.requireContent()) return;
+    const content = this.pageContent;
 
     const target = document.getElementById(`${type}-result`);
     if (target) target.innerHTML = '<div class="loading-spinner"></div>';
@@ -471,8 +495,9 @@ class PopupInterface {
       if (!action) throw new Error(`No analysis available for "${type}"`);
 
       const response = await this.send(action, {
-        text: this.pageContent.mainText,
+        text: content.mainText,
       });
+      if (this.pageContent !== content) return;
       if (!response.success) throw new Error(response.error);
 
       if (!target) return;
@@ -493,7 +518,8 @@ class PopupInterface {
     } catch (error) {
       /** @type {any} */
       const err = error;
-      if (target) target.textContent = err.message;
+      if (this.pageContent === content && target)
+        target.textContent = err.message;
     }
   }
 

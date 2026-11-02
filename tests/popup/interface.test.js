@@ -47,6 +47,7 @@ async function openPopup({
   preferences = {},
   providerStatus = {},
   overrides = {},
+  waitForReady = true,
 } = {}) {
   responses = {
     GET_USER_PREFERENCES: {
@@ -89,10 +90,41 @@ async function openPopup({
   await import('../../scripts/popup-main.js');
   document.dispatchEvent(new Event('DOMContentLoaded'));
 
-  await vi.waitFor(() =>
-    expect(el('loading-overlay').style.display).toBe('none')
-  );
+  if (waitForReady)
+    await vi.waitFor(() =>
+      expect(el('loading-overlay').style.display).toBe('none')
+    );
 }
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function importBook() {
+  const input = el('document-file');
+  Object.defineProperty(input, 'files', {
+    configurable: true,
+    value: [
+      {
+        name: 'book-B.txt',
+        size: 24,
+        text: async () => 'Book B is about bananas.',
+      },
+    ],
+  });
+  input.dispatchEvent(new Event('change'));
+  await vi.waitFor(() => {
+    expect(text('current-page-title')).toBe('book-B.txt');
+    expect(el('loading-overlay').style.display).toBe('none');
+  });
+}
+
+// Drain the message continuation chain before asserting that stale work stayed inert.
+const settleResponses = () => new Promise(done => setTimeout(done, 0));
 
 describe('popup', () => {
   beforeEach(() => {
@@ -100,6 +132,191 @@ describe('popup', () => {
   });
 
   describe('learning workspace', () => {
+    it.each([true, false])(
+      'ignores a previous document analysis response after import (success=%s)',
+      async success => {
+        const pending = deferred();
+        await openPopup({
+          overrides: { EXTRACT_KEY_INSIGHTS: pending.promise },
+        });
+        document.querySelector('[data-type="insights"]').click();
+        await vi.waitFor(() =>
+          expect(sentPayload('EXTRACT_KEY_INSIGHTS')?.text).toBe(PAGE.mainText)
+        );
+        await importBook();
+        pending.resolve(
+          success
+            ? { success: true, data: { text: 'Old article result' } }
+            : { success: false, error: 'Old article failure' }
+        );
+        await settleResponses();
+        expect(text('current-page-title')).toBe('book-B.txt');
+        expect(text('insights-result')).toBe(
+          'Run this analysis for this document.'
+        );
+      }
+    );
+
+    it.each([true, false])(
+      'keeps an imported document when startup extraction finishes late (success=%s)',
+      async success => {
+        const pending = deferred();
+        await openPopup({
+          waitForReady: false,
+          overrides: { EXTRACT_PAGE_CONTENT: pending.promise },
+        });
+        await vi.waitFor(() =>
+          expect(sentPayload('EXTRACT_PAGE_CONTENT')).toEqual({ tabId: 7 })
+        );
+        await importBook();
+        pending.resolve(
+          success
+            ? { success: true, data: PAGE }
+            : { success: false, error: 'Old extraction failed' }
+        );
+        await settleResponses();
+        expect(text('current-page-title')).toBe('book-B.txt');
+        expect(text('current-page-status')).toContain('Ready');
+        responses.ANSWER_CONTEXTUAL_QUESTION = {
+          success: true,
+          data: { answer: 'Bananas.' },
+        };
+        el('chat-input').value = 'What fruit?';
+        el('send-chat-btn').click();
+        await vi.waitFor(() =>
+          expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')?.context).toBe(
+            'Book B is about bananas.'
+          )
+        );
+      }
+    );
+
+    it('keeps an imported document when preferences finish loading before extraction', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: { GET_USER_PREFERENCES: pending.promise },
+      });
+      await vi.waitFor(() =>
+        expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ actionType: 'GET_USER_PREFERENCES' })
+        )
+      );
+      await importBook();
+      pending.resolve({ success: true, data: { theme: 'light' } });
+      await settleResponses();
+      expect(text('current-page-title')).toBe('book-B.txt');
+      expect(sentPayload('EXTRACT_PAGE_CONTENT')).toBeUndefined();
+    });
+
+    it('does not restore an old history snapshot after a successful clear', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: {
+          GET_DOCUMENT_HISTORY: pending.promise,
+          CLEAR_DOCUMENT_CHAT: { success: true, data: { removed: 1 } },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(sentPayload('GET_DOCUMENT_HISTORY')?.url).toBe(PAGE.url)
+      );
+      el('clear-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('chat-memory-status')).toContain('Chat cleared')
+      );
+      pending.resolve({
+        success: true,
+        data: {
+          conversations: [{ question: 'Old question', answer: 'Old answer' }],
+          memoryEnabled: true,
+        },
+      });
+      await settleResponses();
+      expect(text('chat-history')).toBe('');
+      expect(text('chat-memory-status')).toContain('Chat cleared');
+      responses.ANSWER_CONTEXTUAL_QUESTION = {
+        success: true,
+        data: { answer: 'Fresh answer' },
+      };
+      el('chat-input').value = 'Fresh question';
+      el('send-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')).toBeDefined()
+      );
+      expect(
+        JSON.stringify(
+          sentPayload('ANSWER_CONTEXTUAL_QUESTION').conversationHistory
+        )
+      ).not.toContain('Old');
+    });
+
+    it('allows pending saved history to restore after clearing fails', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: {
+          GET_DOCUMENT_HISTORY: pending.promise,
+          CLEAR_DOCUMENT_CHAT: {
+            success: false,
+            error: 'Could not clear saved chat',
+          },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(sentPayload('GET_DOCUMENT_HISTORY')).toBeDefined()
+      );
+      el('clear-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('toast-container')).toContain('Could not clear saved chat')
+      );
+      pending.resolve({
+        success: true,
+        data: {
+          conversations: [
+            { question: 'Saved question', answer: 'Saved answer' },
+          ],
+          memoryEnabled: true,
+        },
+      });
+      await vi.waitFor(() =>
+        expect(text('chat-history')).toContain('Saved answer')
+      );
+      expect(text('chat-memory-status')).toContain('Restored 1');
+    });
+
+    it('keeps a new exchange when an older restoration snapshot arrives', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: {
+          GET_DOCUMENT_HISTORY: pending.promise,
+          ANSWER_CONTEXTUAL_QUESTION: {
+            success: true,
+            data: { answer: 'Fresh answer' },
+          },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(sentPayload('GET_DOCUMENT_HISTORY')).toBeDefined()
+      );
+      el('chat-input').value = 'Fresh question';
+      el('send-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('chat-history')).toContain('Fresh answer')
+      );
+      pending.resolve({
+        success: true,
+        data: {
+          conversations: [{ question: 'Old question', answer: 'Old answer' }],
+          memoryEnabled: true,
+        },
+      });
+      await settleResponses();
+      expect(text('chat-history')).toContain('Fresh answer');
+      expect(text('chat-history')).not.toContain('Old answer');
+    });
+
     it('keeps a generated summary visible when it could not be saved', async () => {
       await openPopup({
         overrides: {
