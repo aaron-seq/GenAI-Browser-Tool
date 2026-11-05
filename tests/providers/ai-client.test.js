@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   AIClient,
   AIError,
@@ -255,6 +255,73 @@ describe('AIClient', () => {
     });
   });
 
+  describe('response body deadlines', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    });
+
+    it.each([
+      { label: 'successful', status: 200, body: ANTHROPIC_OK },
+      {
+        label: 'retryable error',
+        status: 503,
+        body: { error: { message: 'overloaded' } },
+      },
+      {
+        label: 'authentication error',
+        status: 401,
+        body: { error: { message: 'invalid key' } },
+      },
+    ])(
+      'times out a delayed $label body without retrying',
+      async ({ status, body }) => {
+        const response = mockResponse(body, { ok: status === 200, status });
+        global.fetch.mockImplementation((_url, { signal }) => {
+          response.json.mockImplementation(
+            () =>
+              new Promise((resolve, reject) => {
+                const timer = setTimeout(() => resolve(body), 200);
+                signal.addEventListener(
+                  'abort',
+                  () => {
+                    clearTimeout(timer);
+                    reject(new DOMException('Body read aborted', 'AbortError'));
+                  },
+                  { once: true }
+                );
+              })
+          );
+          return Promise.resolve(response);
+        });
+
+        let outcome;
+        const completion = fastClient({ timeoutMs: 50 })
+          .complete('s', 'u')
+          .then(
+            text => {
+              outcome = { text };
+            },
+            error => {
+              outcome = { error };
+            }
+          );
+        await vi.advanceTimersByTimeAsync(49);
+        expect(response.json).toHaveBeenCalledTimes(1);
+        expect(outcome).toBeUndefined();
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(outcome).toMatchObject({
+          error: { code: 'TIMEOUT', message: expect.stringContaining('50ms') },
+        });
+        await completion;
+        expect(outcome.error).toBeInstanceOf(AIError);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+      }
+    );
+  });
+
   describe('backoff', () => {
     it('grows exponentially and stays bounded', () => {
       const first = backoffDelay(0);
@@ -371,6 +438,17 @@ describe('AIClient', () => {
       await expect(client.complete('s', 'u')).rejects.toMatchObject({
         message: expect.stringContaining('Internal Server Error'),
       });
+    });
+
+    it('does not retry malformed successful JSON as a network failure', async () => {
+      const response = mockResponse({});
+      response.json.mockRejectedValue(new SyntaxError('not json'));
+      global.fetch.mockResolvedValue(response);
+
+      await expect(fastClient().complete('s', 'u')).rejects.toBeInstanceOf(
+        SyntaxError
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
     it('reports a network failure without masking the cause', async () => {

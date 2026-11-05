@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Serialize Settings and popup writes in the worker, including first-run defaults
+  and confirmed resets, to preserve overlapping edits (#46).
+- Keep delayed extraction, analysis, links, and saved chat scoped to the current
+  document/conversation; preserve current and independently restored summaries (#47, #48).
+- Stop queued summary sections after a fatal failure; preserve daily cleanup
+  alarms across worker starts (#49, #50).
+- Keep provider deadlines active through response bodies, and extract visible
+  text with block boundaries without changing the source DOM (#51, #52).
+- Restore keyboard access to summary-length radios and expose task-tab selection,
+  panel relationships, and Arrow/Home/End navigation (#36).
 - Replace fictional contribution examples, consolidate setup and validation
   guidance, and exclude development configs from the npm package (#35).
 - Pin verified current CI action releases, select Ubuntu 26.04 explicitly, and
@@ -30,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A redesigned popup and reading workspace with a persistent source panel,
+  neutral/teal light and dark themes, local SVG icons, clear task labels,
+  compact study prompts, and responsive layouts (#36).
 - A read-only CI guard rejects a stacked PR whose base is already contained in
   the default branch, with Git-history regression tests (issue #22).
 - Service-worker regression tests for startup failure, page context menus,

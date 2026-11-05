@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 /**
- * The options page is the only writer of `user_preferences`. What matters is
- * that every control maps to the field the background service later reads —
+ * Options controls send settings edits to the worker's shared writer. Every
+ * control must map to the field the background service later reads —
  * a mismatch here is invisible in the UI and shows up as "changing the setting
  * does nothing", which is exactly the class of bug 5.1.0 had to fix.
  *
@@ -55,6 +55,14 @@ function lastSaved() {
   return calls.at(-1)[0].user_preferences;
 }
 
+/** Route extension messages through the shipped worker. */
+function forwardToWorker(message) {
+  const handler = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+  return new Promise(resolve => {
+    handler(message, { id: 'mock-extension-id' }, resolve);
+  });
+}
+
 /**
  * @param {string} id
  * @param {string} value
@@ -68,11 +76,19 @@ function change(id, value) {
 /** @param {Record<string, any>} stored */
 async function loadPage(stored = {}) {
   document.body.innerHTML = OPTIONS_MARKUP;
-  chrome.storage.sync.get.mockResolvedValue(
-    Object.keys(stored).length ? { user_preferences: stored } : {}
+  const contents = Object.keys(stored).length
+    ? { user_preferences: structuredClone(stored) }
+    : {};
+  chrome.storage.sync.get.mockImplementation(async () =>
+    structuredClone(contents)
   );
+  chrome.storage.sync.set.mockImplementation(async values => {
+    Object.assign(contents, structuredClone(values));
+  });
 
   vi.resetModules();
+  await import('../../background.js');
+  chrome.runtime.sendMessage.mockImplementation(forwardToWorker);
   await import('../../options.js');
   document.dispatchEvent(new Event('DOMContentLoaded'));
 
@@ -147,6 +163,7 @@ describe('options page', () => {
       ).toMatch(/Failed to fetch/)
     );
     expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    chrome.runtime.sendMessage.mockImplementation(forwardToWorker);
     change('anthropic-key', 'replacement-key');
     await vi.waitFor(() =>
       expect(lastSaved().apiKeys.anthropic).toBe('replacement-key')
@@ -161,7 +178,8 @@ describe('options page', () => {
   });
   beforeEach(() => {
     vi.clearAllMocks();
-    chrome.storage.sync.set.mockResolvedValue(undefined);
+    chrome.storage.sync.set.mockReset().mockResolvedValue(undefined);
+    chrome.runtime.sendMessage.mockReset();
   });
 
   describe('rendering saved settings', () => {
@@ -220,6 +238,10 @@ describe('options page', () => {
         expect(chrome.storage.sync.set).toHaveBeenCalled()
       );
       expect(lastSaved().apiKeys.openai).toBe('sk-typed');
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+        actionType: 'UPDATE_USER_PREFERENCES',
+        payload: { apiKeys: { openai: 'sk-typed' } },
+      });
     });
 
     it('stores a model override under models.<provider>', async () => {
@@ -324,6 +346,7 @@ describe('options page', () => {
       await Promise.resolve();
 
       expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+      expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
     });
 
     it('clears stored keys once confirmed', async () => {
@@ -337,6 +360,10 @@ describe('options page', () => {
       );
       expect(lastSaved().apiKeys).toEqual({});
       expect(lastSaved().preferredProvider).toBe('anthropic');
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+        actionType: 'RESET_USER_PREFERENCES',
+        payload: {},
+      });
     });
 
     it('finishes a confirmed reset even if subsequent reads are unavailable', async () => {

@@ -110,7 +110,7 @@ class BackgroundService {
     );
     chrome.commands.onCommand.addListener(this.handleCommand.bind(this));
     chrome.alarms.onAlarm.addListener(this.handleAlarm.bind(this));
-    chrome.alarms.create('cleanupOldData', { periodInMinutes: 1440 });
+    this.ensureCleanupAlarm();
     chrome.storage.onChanged.addListener((changes, area) => {
       const change = changes.user_preferences;
       if (area !== 'sync' || !change) return;
@@ -121,6 +121,18 @@ class BackgroundService {
         this.logger.error('Context menu update failed', error.message);
       });
     });
+  }
+
+  async ensureCleanupAlarm() {
+    try {
+      // Replacing a named alarm restarts its delay on every worker wake.
+      if (!(await chrome.alarms.get('cleanupOldData'))) {
+        await chrome.alarms.create('cleanupOldData', { periodInMinutes: 1440 });
+      }
+    } catch {
+      // Keep startup usable; a later worker start will check the alarm again.
+      this.logger.error('History cleanup alarm initialization failed');
+    }
   }
 
   // ---------------------------------------------------------------- messaging
@@ -219,6 +231,11 @@ class BackgroundService {
 
       case 'UPDATE_USER_PREFERENCES':
         return this.configManager.updateUserPreferences(payload);
+
+      case 'RESET_USER_PREFERENCES':
+        return this.configManager.setUserPreferences(
+          this.configManager.defaultSettings
+        );
 
       case 'GET_PROVIDER_STATUS':
         return this.configManager.getProviderStatus();
@@ -786,13 +803,21 @@ export async function mapWithConcurrency(items, limit, fn) {
   /** @type {R[]} */
   const results = new Array(items.length);
   let next = 0;
+  let failed = false;
 
   const workers = Array.from(
     { length: Math.min(limit, items.length) },
     async () => {
-      while (next < items.length) {
+      while (!failed && next < items.length) {
         const index = next++;
-        results[index] = await fn(/** @type {T} */ (items[index]), index);
+        try {
+          results[index] = await fn(/** @type {T} */ (items[index]), index);
+        } catch (error) {
+          // Siblings may finish, but no queued work can produce a usable result.
+          // eslint-disable-next-line require-atomic-updates -- This flag only transitions to true.
+          failed = true;
+          throw error;
+        }
       }
     }
   );

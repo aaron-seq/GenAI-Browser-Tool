@@ -2,6 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ConfigurationManager } from '../../core/configuration-manager.js';
 import { AIError } from '../../providers/ai-client.js';
 
+/** Back reads and writes with cloned data, as Chrome storage does. */
+function givenStorage(preferences) {
+  const stored = preferences
+    ? { user_preferences: structuredClone(preferences) }
+    : {};
+  chrome.storage.sync.get.mockImplementation(async () =>
+    structuredClone(stored)
+  );
+  chrome.storage.sync.set.mockImplementation(async values => {
+    Object.assign(stored, structuredClone(values));
+  });
+  return stored;
+}
+
 describe('ConfigurationManager', () => {
   /** @type {ConfigurationManager} */
   let configManager;
@@ -10,6 +24,147 @@ describe('ConfigurationManager', () => {
     configManager = new ConfigurationManager();
     vi.clearAllMocks();
     chrome.storage.sync.get.mockResolvedValue({});
+    chrome.storage.sync.set.mockReset().mockResolvedValue(undefined);
+  });
+
+  describe('serialized settings writes', () => {
+    it('keeps overlapping top-level and nested edits', async () => {
+      const stored = givenStorage({ apiKeys: { anthropic: 'fixture-key' } });
+      await Promise.all([
+        configManager.updateUserPreferences({ theme: 'dark' }),
+        configManager.updateUserPreferences({ summaryType: 'tldr' }),
+        configManager.updateUserPreferences({
+          models: { openai: 'fixture-openai' },
+        }),
+        configManager.updateUserPreferences({
+          models: { gemini: 'fixture-gemini' },
+        }),
+        configManager.updateUserPreferences({
+          features: { notifications: false },
+        }),
+        configManager.updateUserPreferences({
+          features: { saveHistory: false },
+        }),
+        configManager.updateUserPreferences({
+          apiKeys: { openai: 'fixture-other-key' },
+        }),
+      ]);
+      expect(stored.user_preferences).toMatchObject({
+        theme: 'dark',
+        summaryType: 'tldr',
+        models: { openai: 'fixture-openai', gemini: 'fixture-gemini' },
+        features: { notifications: false, saveHistory: false },
+        apiKeys: { anthropic: 'fixture-key', openai: 'fixture-other-key' },
+      });
+    });
+
+    it('finishes first-run initialization before applying an overlapping edit', async () => {
+      const stored = givenStorage();
+      let finishRead;
+      chrome.storage.sync.get.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finishRead = () => resolve({});
+          })
+      );
+      const initialization = configManager.initialize();
+      await vi.waitFor(() =>
+        expect(chrome.storage.sync.get).toHaveBeenCalledOnce()
+      );
+      const update = configManager.updateUserPreferences({ theme: 'dark' });
+      await new Promise(resolve => setTimeout(resolve, 0));
+      finishRead();
+      await Promise.all([initialization, update]);
+      expect(stored.user_preferences.theme).toBe('dark');
+    });
+
+    it('orders a reset between overlapping edits without restoring cleared keys', async () => {
+      const original = {
+        apiKeys: { openai: 'fixture-old-key' },
+        theme: 'light',
+      };
+      const stored = givenStorage(original);
+      let finishRead;
+      chrome.storage.sync.get.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finishRead = () =>
+              resolve({ user_preferences: structuredClone(original) });
+          })
+      );
+      const first = configManager.updateUserPreferences({
+        features: { notifications: false },
+      });
+      await vi.waitFor(() =>
+        expect(chrome.storage.sync.get).toHaveBeenCalledOnce()
+      );
+      const reset = configManager.setUserPreferences(
+        configManager.defaultSettings
+      );
+      const last = configManager.updateUserPreferences({ theme: 'dark' });
+      await new Promise(resolve => setTimeout(resolve, 0));
+      finishRead();
+      await Promise.all([first, reset, last]);
+      expect(stored.user_preferences).toMatchObject({
+        apiKeys: {},
+        theme: 'dark',
+        features: { notifications: true },
+      });
+      expect(stored.user_preferences.apiKeys).toEqual({});
+    });
+
+    it.each(['read', 'write'])(
+      'recovers queued edits after a failed %s',
+      async failure => {
+        const stored = givenStorage({ theme: 'light' });
+        if (failure === 'read')
+          chrome.storage.sync.get.mockRejectedValueOnce(
+            new Error('fixture failure')
+          );
+        else
+          chrome.storage.sync.set.mockRejectedValueOnce(
+            new Error('fixture failure')
+          );
+        const first = configManager.updateUserPreferences({
+          summaryType: 'tldr',
+        });
+        const rejected = expect(first).rejects.toMatchObject({
+          message:
+            failure === 'read'
+              ? 'Saved settings are unavailable. Try again.'
+              : 'fixture failure',
+        });
+        const later = configManager.updateUserPreferences({ theme: 'dark' });
+        await Promise.all([rejected, later]);
+        expect(stored.user_preferences.theme).toBe('dark');
+        expect(stored.user_preferences.summaryType).toBe('key-points');
+      }
+    );
+
+    it('recovers queued edits after a failed initialization or replacement', async () => {
+      const stored = givenStorage({ apiKeys: { openai: 'fixture-key' } });
+      chrome.storage.sync.get.mockRejectedValueOnce(
+        new Error('initialization failed')
+      );
+      const initialization = configManager.initialize();
+      const rejectedInitialization = expect(initialization).rejects.toThrow(
+        'initialization failed'
+      );
+      chrome.storage.sync.set.mockRejectedValueOnce(
+        new Error('replacement failed')
+      );
+      const replacement = configManager.setUserPreferences(
+        configManager.defaultSettings
+      );
+      const rejectedReplacement =
+        expect(replacement).rejects.toThrow('replacement failed');
+      const later = configManager.updateUserPreferences({ theme: 'dark' });
+      await Promise.all([rejectedInitialization, rejectedReplacement, later]);
+      expect(stored.user_preferences).toMatchObject({
+        theme: 'dark',
+        apiKeys: { openai: 'fixture-key' },
+      });
+    });
   });
 
   describe('defaults', () => {

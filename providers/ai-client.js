@@ -211,6 +211,29 @@ export class AIClient {
         body,
         signal: controller.signal,
       });
+
+      if (!response.ok) {
+        const retryable = RETRYABLE_STATUSES.has(response.status);
+        const result = {
+          ok: /** @type {false} */ (false),
+          retryable,
+          error: new AIError(
+            response.status === 401 || response.status === 403
+              ? 'AUTH_ERROR'
+              : 'PROVIDER_ERROR',
+            // The provider's own message is the useful part; it never contains the key.
+            `${spec.label} returned ${response.status}: ${await readErrorMessage(response)}`
+          ),
+        };
+        const retryAfterMs = parseRetryAfter(
+          response.headers?.get('retry-after')
+        );
+        return retryAfterMs === undefined
+          ? result
+          : { ...result, retryAfterMs };
+      }
+
+      return { ok: true, text: spec.parse(await response.json()).trim() };
     } catch (error) {
       /** @type {any} */
       const err = error;
@@ -226,6 +249,8 @@ export class AIClient {
           ),
         };
       }
+      // A received response that cannot be parsed is not a retryable fetch failure.
+      if (response) throw error;
       return {
         ok: false,
         retryable: true,
@@ -237,27 +262,6 @@ export class AIClient {
     } finally {
       clearTimeout(timer);
     }
-
-    if (!response.ok) {
-      const retryable = RETRYABLE_STATUSES.has(response.status);
-      const result = {
-        ok: /** @type {false} */ (false),
-        retryable,
-        error: new AIError(
-          response.status === 401 || response.status === 403
-            ? 'AUTH_ERROR'
-            : 'PROVIDER_ERROR',
-          // The provider's own message is the useful part; it never contains the key.
-          `${spec.label} returned ${response.status}: ${await readErrorMessage(response)}`
-        ),
-      };
-      const retryAfterMs = parseRetryAfter(
-        response.headers?.get('retry-after')
-      );
-      return retryAfterMs === undefined ? result : { ...result, retryAfterMs };
-    }
-
-    return { ok: true, text: spec.parse(await response.json()).trim() };
   }
 }
 
@@ -297,8 +301,8 @@ export function parseRetryAfter(value) {
 }
 
 /**
- * Pull a human-readable message out of an error response without ever throwing
- * a second time — a malformed error body must not mask the original failure.
+ * Pull a human-readable message out of an error response. Malformed bodies must
+ * not mask the original failure; aborts propagate to enforce the request deadline.
  *
  * @param {Response} response
  * @returns {Promise<string>}
@@ -312,7 +316,8 @@ async function readErrorMessage(response) {
       response.statusText ||
       'unknown error'
     );
-  } catch {
+  } catch (error) {
+    if (/** @type {Error} */ (error)?.name === 'AbortError') throw error;
     return response.statusText || 'unknown error';
   }
 }

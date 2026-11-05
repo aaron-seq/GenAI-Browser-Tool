@@ -70,6 +70,8 @@ describe('Extension workflow', () => {
     chrome.storage.sync.get.mockResolvedValue(CONFIGURED);
     chrome.storage.local.get.mockResolvedValue({});
     chrome.storage.local.set.mockReset().mockResolvedValue(undefined);
+    chrome.alarms.get.mockReset().mockResolvedValue(undefined);
+    chrome.alarms.create.mockReset().mockResolvedValue(undefined);
 
     await import('../../background.js');
     await vi.waitFor(() => {
@@ -159,6 +161,37 @@ describe('Extension workflow', () => {
 
       expect(response.data.sections).toBe(1);
       expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops queued sections after a fatal failure without merging or saving partial notes', async () => {
+      let finishSiblings;
+      const siblings = new Promise(resolve => {
+        finishSiblings = resolve;
+      });
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          headers: { get: () => null },
+          json: async () => ({ error: { message: 'Rejected section' } }),
+        })
+        .mockReturnValue(siblings);
+
+      const response = await dispatch('GENERATE_CONTENT_SUMMARY', {
+        content: 'x'.repeat(190000),
+      });
+
+      expect(response).toMatchObject({
+        success: false,
+        errorCode: 'PROVIDER_ERROR',
+        error: 'Anthropic Claude returned 400: Rejected section',
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      finishSiblings(CLAUDE_REPLY);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
     });
 
     it('rejects empty content before spending an API call', async () => {
@@ -977,7 +1010,195 @@ describe('Extension workflow', () => {
     });
   });
 
+  describe('settings writes', () => {
+    let stored;
+    beforeEach(() => {
+      stored = structuredClone(CONFIGURED);
+      chrome.storage.sync.get.mockImplementation(async () =>
+        structuredClone(stored)
+      );
+      chrome.storage.sync.set.mockImplementation(async values => {
+        Object.assign(stored, structuredClone(values));
+      });
+    });
+
+    it('preserves overlapping edits received by the shared worker writer', async () => {
+      const results = await Promise.all([
+        dispatch('UPDATE_USER_PREFERENCES', { theme: 'dark' }),
+        dispatch('UPDATE_USER_PREFERENCES', {
+          features: { notifications: false },
+        }),
+        dispatch('UPDATE_USER_PREFERENCES', {
+          features: { saveHistory: false },
+        }),
+        dispatch('UPDATE_USER_PREFERENCES', {
+          models: { openai: 'fixture-model' },
+        }),
+      ]);
+      expect(results.every(response => response.success)).toBe(true);
+      expect(stored.user_preferences).toMatchObject({
+        theme: 'dark',
+        features: { notifications: false, saveHistory: false },
+        models: { openai: 'fixture-model' },
+        apiKeys: CONFIGURED.user_preferences.apiKeys,
+      });
+    });
+
+    it('replaces preferences on explicit reset without requiring another read', async () => {
+      chrome.storage.sync.get.mockRejectedValue(
+        new Error('storage unavailable')
+      );
+      const result = await dispatch('RESET_USER_PREFERENCES', {});
+      expect(result.success).toBe(true);
+      expect(result.data.apiKeys).toEqual({});
+      expect(result.data.preferredProvider).toBe('anthropic');
+      expect(stored.user_preferences.apiKeys).toEqual({});
+      expect(stored.user_preferences.models).toEqual({});
+    });
+
+    it('orders reset before a later edit and recovers after a failed reset', async () => {
+      const [reset, update] = await Promise.all([
+        dispatch('RESET_USER_PREFERENCES', {}),
+        dispatch('UPDATE_USER_PREFERENCES', { theme: 'dark' }),
+      ]);
+      expect(reset.success).toBe(true);
+      expect(update.success).toBe(true);
+      expect(stored.user_preferences).toMatchObject({
+        apiKeys: {},
+        theme: 'dark',
+      });
+      expect(stored.user_preferences.apiKeys).toEqual({});
+
+      chrome.storage.sync.set.mockRejectedValueOnce(
+        new Error('fixture write failure')
+      );
+      const [failedReset, later] = await Promise.all([
+        dispatch('RESET_USER_PREFERENCES', {}),
+        dispatch('UPDATE_USER_PREFERENCES', { summaryType: 'tldr' }),
+      ]);
+      expect(failedReset).toMatchObject({
+        success: false,
+        error: 'fixture write failure',
+      });
+      expect(later.success).toBe(true);
+      expect(stored.user_preferences).toMatchObject({
+        theme: 'dark',
+        summaryType: 'tldr',
+      });
+    });
+  });
+
   describe('worker lifecycle', () => {
+    it('preserves the cleanup alarm scheduled time across worker restarts', async () => {
+      const scheduledTime = Date.now() + 30 * 60 * 1000;
+      let alarm = {
+        name: 'cleanupOldData',
+        periodInMinutes: 1440,
+        scheduledTime,
+      };
+      chrome.alarms.get.mockImplementation(async () => structuredClone(alarm));
+      chrome.alarms.create.mockImplementation(async (name, info) => {
+        alarm = { name, ...info, scheduledTime: Date.now() + 86400000 };
+      });
+      vi.clearAllMocks();
+
+      for (let wake = 0; wake < 2; wake++) {
+        vi.resetModules();
+        await import('../../background.js');
+      }
+
+      expect(alarm.scheduledTime).toBe(scheduledTime);
+      expect(chrome.alarms.create).not.toHaveBeenCalled();
+      expect(chrome.alarms.get).toHaveBeenCalledTimes(2);
+      expect(chrome.alarms.get).toHaveBeenCalledWith('cleanupOldData');
+    });
+
+    it('creates a missing cleanup alarm at startup', async () => {
+      vi.resetModules();
+      vi.clearAllMocks();
+      await import('../../background.js');
+
+      await vi.waitFor(() => {
+        expect(chrome.alarms.create).toHaveBeenCalledOnce();
+      });
+      expect(chrome.alarms.get).toHaveBeenCalledWith('cleanupOldData');
+      expect(chrome.alarms.create).toHaveBeenCalledWith('cleanupOldData', {
+        periodInMinutes: 1440,
+      });
+    });
+
+    it('registers listeners and routes messages while the alarm read is pending', async () => {
+      let finishRead;
+      chrome.alarms.get.mockReturnValueOnce(
+        new Promise(resolve => {
+          finishRead = resolve;
+        })
+      );
+      vi.resetModules();
+      vi.clearAllMocks();
+      await import('../../background.js');
+
+      try {
+        expect(chrome.runtime.onMessage.addListener).toHaveBeenCalledOnce();
+        expect(chrome.alarms.onAlarm.addListener).toHaveBeenCalledOnce();
+        expect(chrome.storage.onChanged.addListener).toHaveBeenCalledOnce();
+        expect(chrome.alarms.create).not.toHaveBeenCalled();
+        expect(await dispatch('GET_HISTORY', {})).toMatchObject({
+          success: true,
+          data: { summaries: [], conversations: [] },
+        });
+      } finally {
+        finishRead(undefined);
+      }
+      await vi.waitFor(() => {
+        expect(chrome.alarms.create).toHaveBeenCalledOnce();
+      });
+    });
+
+    it.each(['get', 'create'])(
+      'handles a rejected alarm %s and retries at the next worker start',
+      async method => {
+        const errorLog = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+        chrome.alarms[method].mockRejectedValueOnce(
+          new Error('fixture-private-alarm-detail')
+        );
+        vi.resetModules();
+        vi.clearAllMocks();
+
+        try {
+          await import('../../background.js');
+          await vi.waitFor(() => {
+            expect(errorLog).toHaveBeenCalledWith(
+              expect.stringContaining(
+                'History cleanup alarm initialization failed'
+              ),
+              ''
+            );
+          });
+          expect(await dispatch('GET_HISTORY', {})).toMatchObject({
+            success: true,
+          });
+          if (method === 'get')
+            expect(chrome.alarms.create).not.toHaveBeenCalled();
+          expect(JSON.stringify(errorLog.mock.calls)).not.toContain(
+            'fixture-private-alarm-detail'
+          );
+
+          vi.resetModules();
+          await import('../../background.js');
+          await vi.waitFor(() => {
+            expect(chrome.alarms.create).toHaveBeenCalledTimes(
+              method === 'create' ? 2 : 1
+            );
+          });
+        } finally {
+          errorLog.mockRestore();
+        }
+      }
+    );
+
     it.each(['install', 'update'])(
       'handles unavailable settings during %s without skipping first-install options',
       async reason => {
@@ -1057,6 +1278,7 @@ describe('Extension workflow', () => {
         ).toHaveBeenCalledOnce();
         expect(chrome.runtime.onInstalled.addListener).toHaveBeenCalledOnce();
         expect(chrome.alarms.onAlarm.addListener).toHaveBeenCalledOnce();
+        expect(chrome.alarms.create).toHaveBeenCalledOnce();
         const response = await dispatch('GET_HISTORY', {});
         expect(response).toMatchObject({
           success: true,

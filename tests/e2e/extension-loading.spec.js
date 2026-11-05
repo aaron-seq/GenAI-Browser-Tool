@@ -6,6 +6,7 @@ import {
   seedPreferences,
   activeTabId,
 } from './fixtures.js';
+import { chunkContent } from '../../core/tasks.js';
 
 /**
  * Real-browser checks: this repository is loaded into Chrome as an unpacked
@@ -104,6 +105,156 @@ test.describe('options page', () => {
 });
 
 test.describe('content extraction', () => {
+  test('keeps extracted paragraphs intact across summary chunk boundaries', async ({
+    context,
+    extensionId,
+  }) => {
+    const paragraphs = Array.from(
+      { length: 30 },
+      (_, index) =>
+        `Paragraph ${index}. ${'word '.repeat(230)}End paragraph ${index}.`
+    );
+    const fixtureUrl = `${FIXTURE_URL}?paragraph-chunks`;
+    await context.route(fixtureUrl, route =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><body><article>${paragraphs.map(text => `<p>${text}</p>`).join('\n\n')}</article></body></html>`,
+      })
+    );
+    const contentPage = await context.newPage();
+    await contentPage.goto(fixtureUrl);
+    const before = await contentPage
+      .locator('html')
+      .evaluate(root => root.outerHTML);
+    const extensionPage = await context.newPage();
+    await extensionPage.goto(`chrome-extension://${extensionId}/options.html`);
+    await contentPage.bringToFront();
+    const tabId = await activeTabId(extensionPage);
+    const response = await extensionPage.evaluate(
+      id =>
+        chrome.runtime.sendMessage({
+          actionType: 'EXTRACT_PAGE_CONTENT',
+          payload: { tabId: id },
+        }),
+      tabId
+    );
+
+    expect(response.success).toBe(true);
+    const { chunks, droppedChars } = chunkContent(response.data.mainText);
+    expect(chunks).toHaveLength(2);
+    expect(droppedChars).toBe(0);
+    for (const chunk of chunks) {
+      expect(chunk.slice(0, 60)).toMatch(/^Paragraph \d+\./);
+      expect(chunk.slice(-80)).toMatch(/End paragraph \d+\.$/);
+    }
+    expect(chunks.join('\n\n')).toBe(paragraphs.join('\n\n'));
+    expect(
+      await contentPage.locator('html').evaluate(root => root.outerHTML)
+    ).toBe(before);
+  });
+
+  for (const { label, body, expected } of [
+    {
+      label: 'closed, open, and nested details',
+      body: '<article><details><summary>Closed summary.</summary><p>Hidden closed body.</p><summary>Hidden second summary.</summary><details open><summary>Hidden nested summary.</summary><p>Hidden nested body.</p></details></details><details open><summary>Open summary.</summary><p>Open body.</p><details><summary>Nested closed summary.</summary><p>Hidden nested closed body.</p></details></details></article>',
+      expected:
+        'Closed summary.\nOpen summary.\n\nOpen body.\n\nNested closed summary.',
+    },
+    {
+      label: 'a selected article inside a closed details body',
+      body: '<details><summary>Visible summary.</summary><article>Hidden selected article.</article></details>',
+      expected: '',
+    },
+    {
+      label: 'a selected article inside the first summary',
+      body: '<details><summary><article>Visible selected article.</article></summary><p>Hidden body.</p></details>',
+      expected: 'Visible selected article.',
+    },
+    {
+      label:
+        'a selected article inside nested open details under a closed ancestor',
+      body: '<details><summary>Outer summary.</summary><details open><summary>Inner summary.</summary><article>Hidden selected article.</article></details></details>',
+      expected: '',
+    },
+  ]) {
+    test(`respects ${label} without changing the source DOM`, async ({
+      context,
+      extensionId,
+    }) => {
+      const fixtureUrl = `${FIXTURE_URL}?details`;
+      await context.route(fixtureUrl, route =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: `<!doctype html><html><body>${body}</body></html>`,
+        })
+      );
+      const contentPage = await context.newPage();
+      await contentPage.goto(fixtureUrl);
+      const before = await contentPage
+        .locator('html')
+        .evaluate(root => root.outerHTML);
+      const extensionPage = await context.newPage();
+      await extensionPage.goto(
+        `chrome-extension://${extensionId}/options.html`
+      );
+      await contentPage.bringToFront();
+      const tabId = await activeTabId(extensionPage);
+      const response = await extensionPage.evaluate(
+        id =>
+          chrome.runtime.sendMessage({
+            actionType: 'EXTRACT_PAGE_CONTENT',
+            payload: { tabId: id },
+          }),
+        tabId
+      );
+
+      expect(response.success).toBe(true);
+      expect(response.data.mainText).toBe(expected);
+      expect(
+        await contentPage.locator('html').evaluate(root => root.outerHTML)
+      ).toBe(before);
+    });
+  }
+
+  test('extracts visible blocks and inline text without changing the source DOM', async ({
+    context,
+    extensionId,
+  }) => {
+    const fixtureUrl = `${FIXTURE_URL}?visible-text`;
+    await context.route(fixtureUrl, route =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><head><style>.hidden{display:none}</style></head><body><article><p>First <strong>visible</strong> paragraph.</p><p class="hidden">Hidden synthetic text.</p><p>Second visible paragraph.</p><p>Inline <em>text</em> stays together.</p><nav>Excluded navigation.</nav></article></body></html>`,
+      })
+    );
+    const contentPage = await context.newPage();
+    await contentPage.goto(fixtureUrl);
+    const before = await contentPage
+      .locator('html')
+      .evaluate(root => root.outerHTML);
+
+    const extensionPage = await context.newPage();
+    await extensionPage.goto(`chrome-extension://${extensionId}/options.html`);
+    await contentPage.bringToFront();
+    const tabId = await activeTabId(extensionPage);
+    const response = await extensionPage.evaluate(
+      id =>
+        chrome.runtime.sendMessage({
+          actionType: 'EXTRACT_PAGE_CONTENT',
+          payload: { tabId: id },
+        }),
+      tabId
+    );
+
+    expect(response.success).toBe(true);
+    expect(response.data.mainText).toBe(
+      'First visible paragraph.\n\nSecond visible paragraph.\n\nInline text stays together.'
+    );
+    expect(
+      await contentPage.locator('html').evaluate(root => root.outerHTML)
+    ).toBe(before);
+  });
+
   test('content script extracts article text and drops navigation chrome', async ({
     context,
     extensionId,

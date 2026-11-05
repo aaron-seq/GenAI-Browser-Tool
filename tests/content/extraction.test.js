@@ -6,8 +6,8 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
  * Chrome does — import once for the side effect, capture the listener, and send
  * it messages — which is also how `tests/integration` drives `background.js`.
  *
- * Note that jsdom does not implement `innerText`, so these exercise the
- * `|| textContent` fallback in `getMainText()` rather than the innerText path.
+ * These test text traversal and CSS filtering, not layout. The real-Chromium
+ * extraction regression verifies visibility, block boundaries, and a stable DOM.
  */
 
 /** @type {(request: any, sender: any, sendResponse: (r: any) => void) => boolean} */
@@ -38,7 +38,8 @@ beforeEach(() => {
 
 describe('extractContent', () => {
   it('returns the page title, url, and main text', async () => {
-    document.body.innerHTML = '<article><p>The body of the article.</p></article>';
+    document.body.innerHTML =
+      '<article><p>The body of the article.</p></article>';
 
     const { success, data } = await send({ action: 'extractContent' });
 
@@ -71,6 +72,109 @@ describe('extractContent', () => {
     expect(data.mainText).toContain('bare paragraph');
   });
 
+  it('separates adjacent blocks while preserving inline words and whitespace', async () => {
+    document.body.innerHTML =
+      '<article><p>First <strong>visible</strong> paragraph.</p><p>Second paragraph.</p><p>Co<em>operate</em> with <span> inline </span> text.</p></article>';
+
+    const { data } = await send({ action: 'extractContent' });
+
+    expect(data.mainText).toBe(
+      'First visible paragraph.\n\nSecond paragraph.\n\nCooperate with inline text.'
+    );
+  });
+
+  it('omits non-rendered descendants and respects CSS block and inline display', async () => {
+    document.head.innerHTML =
+      '<style>.hidden{display:none}.block{display:block}.inline{display:inline}</style>';
+    document.body.innerHTML =
+      '<article><span class="block">First block.</span><span class="hidden">Hidden text.</span><span class="block">Second block.</span><p class="inline">Inline</p> text.</article>';
+
+    const { data } = await send({ action: 'extractContent' });
+
+    expect(data.mainText).toBe('First block.\nSecond block.\nInline text.');
+  });
+
+  it.each([
+    '<div style="display:none"><article>Hidden article.</article></div>',
+    '<article style="display:none">Hidden article.</article>',
+    '<article><section style="content-visibility:hidden">Hidden content.</section></article>',
+  ])('omits content in a non-rendered container: %s', async markup => {
+    document.body.innerHTML = markup;
+
+    const { data } = await send({ action: 'extractContent' });
+
+    expect(data.mainText).toBe('');
+  });
+
+  it('allows a descendant to restore visibility without including hidden siblings', async () => {
+    document.body.innerHTML =
+      '<article><div style="visibility:hidden">Hidden <span style="visibility:visible">Visible child.</span><span>Hidden sibling.</span></div><div style="visibility:collapse">Collapsed text.</div></article>';
+
+    const { data } = await send({ action: 'extractContent' });
+
+    expect(data.mainText).toBe('Visible child.');
+  });
+
+  it('keeps explicit line breaks and preformatted internal spacing', async () => {
+    document.body.innerHTML =
+      '<article><p>First line.<br>Second line.</p><pre>one  two\n  three</pre></article>';
+
+    const { data } = await send({ action: 'extractContent' });
+
+    expect(data.mainText).toBe(
+      'First line.\nSecond line.\n\none  two\n  three'
+    );
+  });
+
+  it.each([
+    {
+      label: 'closed, open, and nested details',
+      markup:
+        '<article><details><summary>Closed summary.</summary><p>Hidden closed body.</p><summary>Hidden second summary.</summary><details open><summary>Hidden nested summary.</summary><p>Hidden nested body.</p></details></details><details open><summary>Open summary.</summary><p>Open body.</p><details><summary>Nested closed summary.</summary><p>Hidden nested closed body.</p></details></details></article>',
+      expected:
+        'Closed summary.\nOpen summary.\n\nOpen body.\n\nNested closed summary.',
+    },
+    {
+      label: 'a selected article inside a closed details body',
+      markup:
+        '<details><summary>Visible summary.</summary><article>Hidden selected article.</article></details>',
+      expected: '',
+    },
+    {
+      label: 'a selected article inside the first summary',
+      markup:
+        '<details><summary><article>Visible selected article.</article></summary><p>Hidden body.</p></details>',
+      expected: 'Visible selected article.',
+    },
+    {
+      label: 'a selected article inside a later summary',
+      markup:
+        '<details><summary>First summary.</summary><summary><article>Hidden selected article.</article></summary></details>',
+      expected: '',
+    },
+    {
+      label:
+        'a selected article inside nested open details under a closed ancestor',
+      markup:
+        '<details><summary>Outer summary.</summary><details open><summary>Inner summary.</summary><article>Hidden selected article.</article></details></details>',
+      expected: '',
+    },
+    {
+      label: 'closed details with no summary',
+      markup:
+        '<article><details>Hidden text.<p>Hidden body.</p></details></article>',
+      expected: '',
+    },
+  ])('respects $label', async ({ markup, expected }) => {
+    document.body.innerHTML = markup;
+    const before = document.documentElement.outerHTML;
+
+    const { data } = await send({ action: 'extractContent' });
+
+    expect(data.mainText).toBe(expected);
+    expect(document.documentElement.outerHTML).toBe(before);
+  });
+
   it('strips navigation, scripts, ads, and comments from the extracted text', async () => {
     document.body.innerHTML = `
       <main>
@@ -86,18 +190,26 @@ describe('extractContent', () => {
     const { data } = await send({ action: 'extractContent' });
 
     expect(data.mainText).toContain('the actual article');
-    for (const noise of ['skip to content', 'var tracking', 'buy this', 'first!', 'related links']) {
+    for (const noise of [
+      'skip to content',
+      'var tracking',
+      'buy this',
+      'first!',
+      'related links',
+    ]) {
       expect(data.mainText).not.toContain(noise);
     }
   });
 
-  // The script is read-only by design; stripping happens on a clone so the page
-  // the user is looking at is never altered.
-  it('does not modify the live page while stripping', async () => {
-    document.body.innerHTML = '<main><nav id="nav">menu</nav><p>text</p></main>';
+  // The script is read-only by design; excluded nodes remain in the source DOM.
+  it('does not modify the live page while excluding navigation', async () => {
+    document.body.innerHTML =
+      '<main><nav id="nav">menu</nav><p>text</p></main>';
+    const before = document.documentElement.outerHTML;
 
     await send({ action: 'extractContent' });
 
+    expect(document.documentElement.outerHTML).toBe(before);
     expect(document.getElementById('nav')).not.toBeNull();
   });
 
@@ -108,7 +220,7 @@ describe('extractContent', () => {
 
     expect(data.headings).toEqual([
       { level: 1, text: 'Title' },
-      { level: 3, text: 'Sub' }
+      { level: 3, text: 'Sub' },
     ]);
   });
 
@@ -139,7 +251,10 @@ describe('getPageMetadata', () => {
 
     const { data } = await send({ action: 'getPageMetadata' });
 
-    expect(data).toMatchObject({ description: 'a description', 'og:title': 'social title' });
+    expect(data).toMatchObject({
+      description: 'a description',
+      'og:title': 'social title',
+    });
     expect(Object.values(data)).not.toContain('orphan with no name');
   });
 });
@@ -179,10 +294,12 @@ describe('extractImages', () => {
 
     const { data } = await send({ action: 'extractImages' });
 
-    expect(data).toEqual([expect.objectContaining({
-      src: 'https://example.com/a.png',
-      alt: 'A picture'
-    })]);
+    expect(data).toEqual([
+      expect.objectContaining({
+        src: 'https://example.com/a.png',
+        alt: 'A picture',
+      }),
+    ]);
   });
 });
 

@@ -3,66 +3,125 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GenAI Browser Assistant</title>
-    <!-- No remote fonts: the extension CSP blocks external stylesheets, so these
-         only ever produced console errors. styles/popup.css uses a system stack. -->
+    <title>GenAI · Reading workspace</title>
     <link rel="stylesheet" href="styles/popup.css" />
   </head>
   <body>
     <div class="app-container">
-      <!-- Header -->
       <header class="app-header">
-        <div class="header-content">
-          <div class="logo-section">
-            <div class="logo-icon">🤖</div>
-            <h1 class="app-title">GenAI Assistant</h1>
-          </div>
-          <div class="header-actions">
-            <button
-              class="action-button"
-              id="open-workspace-btn"
-              title="Keep reading in a full-page workspace"
+        <div class="logo-section">
+          <span class="brand-mark"
+            ><svg
+              class="icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.65"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
             >
-              Open workspace
-            </button>
-            <button class="icon-button" id="settings-btn" title="Settings">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M12 1v6m0 6v6m6-12h-6m-6 0h6"></path>
-              </svg>
-            </button>
-            <button class="icon-button" id="theme-toggle" title="Toggle Theme">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <circle cx="12" cy="12" r="5"></circle>
-                <path
-                  d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-                ></path>
-              </svg>
-            </button>
-          </div>
+              <path d="M4 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-3H4z" />
+              <path d="M20 4h-4a3 3 0 0 0-3 3v14a4 4 0 0 1 4-3h3z" /></svg
+          ></span>
+          <h1 class="app-title">GenAI <span>Reading workspace</span></h1>
         </div>
-        <div class="status-bar">
+        <div class="header-actions">
           <div class="provider-status">
-            <span class="status-indicator" id="provider-indicator"></span>
-            <span class="status-text" id="provider-name">Initializing...</span>
+            <span class="status-indicator" id="provider-indicator"></span
+            ><span id="provider-name">Initializing…</span>
           </div>
-          <div class="page-info" id="page-info">
-            <span class="page-title" id="current-page-title">Loading...</span>
-          </div>
+          <button
+            class="action-button"
+            id="open-workspace-btn"
+            title="Keep reading in a full-page workspace"
+          >
+            <svg
+              class="icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.65"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 3h7v7M21 3l-9 9M9 3H3v18h18v-6" /></svg
+            ><span>Open workspace</span>
+          </button>
+          <button
+            class="icon-button"
+            id="settings-btn"
+            aria-label="Settings"
+            title="Settings"
+          >
+            <svg
+              class="icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.65"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path
+                d="m9 3-1 3-3 1-2 4 2 2v4l4 2 3-1 3 1 4-2v-4l2-2-2-4-3-1-1-3Z"
+              />
+              <circle cx="12" cy="11" r="3" />
+            </svg>
+          </button>
+          <button
+            class="icon-button"
+            id="theme-toggle"
+            aria-label="Toggle color theme"
+            title="Toggle color theme"
+          >
+            <svg
+              class="icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.65"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z" />
+            </svg>
+          </button>
+        </div>
+      </header>
+      <aside class="document-panel" aria-label="Current document">
+        <div class="document-heading">
+          <span class="eyebrow">Your source</span
+          ><span class="document-symbol"
+            ><svg
+              class="icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.65"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M8 3h8l4 4v14H4V3z" />
+              <path d="M8 11h8M8 15h6M15 3v5h5" /></svg
+          ></span>
+        </div>
+        <div id="page-info">
+          <h2 id="current-page-title">Loading document…</h2>
         </div>
         <p
           class="page-status"
@@ -72,123 +131,295 @@
         >
           Reading this page…
         </p>
-      </header>
-
-      <!-- Navigation Tabs -->
-      <nav class="tab-navigation">
-        <button class="tab-button active" data-tab="summary">
-          <span class="tab-icon">📄</span>
-          <span class="tab-label">Summary</span>
+        <p class="document-overview" id="page-overview">
+          Read a page, understand the ideas, and keep learning.
+        </p>
+        <details class="workspace-only document-import" open>
+          <summary>
+            <svg
+              class="icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.65"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6" />
+            </svg>
+            Import a document
+          </summary>
+          <label for="document-file">Text or Markdown file</label>
+          <input
+            id="document-file"
+            type="file"
+            accept=".txt,.md,.markdown,text/plain,text/markdown"
+            aria-describedby="import-help"
+          />
+          <p class="helper-text" id="import-help">
+            Up to 2 million characters. Your file stays in this tab until you
+            request an AI action.
+          </p>
+        </details>
+        <div class="source-note workspace-only">
+          <span class="eyebrow">Read with context</span>
+          <p>
+            Answers use passages from this source. Open the excerpts to check
+            the evidence.
+          </p>
+          <p>
+            Text goes to your selected provider only when you use an AI action.
+          </p>
+        </div>
+      </aside>
+      <nav class="tab-navigation" role="tablist" aria-label="Document tools">
+        <button
+          class="tab-button active"
+          id="summary-tab-button"
+          data-tab="summary"
+          role="tab"
+          aria-controls="summary-tab"
+          aria-selected="true"
+          tabindex="0"
+        >
+          <svg
+            class="icon"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.65"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M8 3h8l4 4v14H4V3z" />
+            <path d="M8 11h8M8 15h6M15 3v5h5" /></svg
+          ><span>Summary</span>
         </button>
-        <button class="tab-button" data-tab="chat">
-          <span class="tab-icon">💬</span>
-          <span class="tab-label">Chat</span>
+        <button
+          class="tab-button"
+          id="chat-tab-button"
+          data-tab="chat"
+          role="tab"
+          aria-controls="chat-tab"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          <svg
+            class="icon"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.65"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z" />
+            <path d="M7 9h10M7 13h6" /></svg
+          ><span>Chat</span>
         </button>
-        <button class="tab-button" data-tab="translate">
-          <span class="tab-icon">🌐</span>
-          <span class="tab-label">Translate</span>
+        <button
+          class="tab-button"
+          id="translate-tab-button"
+          data-tab="translate"
+          role="tab"
+          aria-controls="translate-tab"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          <svg
+            class="icon"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.65"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d="M3 5h12M9 3v2M6 5c0 5 3 8 7 10M12 5c0 4-3 8-8 10M14 21l4-10 4 10M16 17h4"
+            /></svg
+          ><span>Translate</span>
         </button>
-        <button class="tab-button" data-tab="analyze">
-          <span class="tab-icon">🔍</span>
-          <span class="tab-label">Analyze</span>
+        <button
+          class="tab-button"
+          id="analyze-tab-button"
+          data-tab="analyze"
+          role="tab"
+          aria-controls="analyze-tab"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          <svg
+            class="icon"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.65"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="10" cy="10" r="7" />
+            <path d="m15 15 6 6M7 12V9m3 3V6m3 6v-2" /></svg
+          ><span>Analyze</span>
         </button>
-        <button class="tab-button" data-tab="tools">
-          <span class="tab-icon">🛠️</span>
-          <span class="tab-label">Tools</span>
+        <button
+          class="tab-button"
+          id="tools-tab-button"
+          data-tab="tools"
+          role="tab"
+          aria-controls="tools-tab"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          <svg
+            class="icon"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.65"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5 4v16M12 4v16M19 4v16" />
+            <path d="M2 8h6M9 16h6M16 9h6" /></svg
+          ><span>Tools</span>
         </button>
       </nav>
-
-      <!-- Main Content -->
-      <main class="main-content">
-        <!-- Summary Tab -->
-        <section class="tab-pane active" id="summary-tab">
-          <div class="content-section">
-            <div class="document-overview">
-              <p id="page-overview">
-                Read a page, understand the ideas, and keep learning.
-              </p>
-              <label class="workspace-only document-import"
-                >Read a text book or notes
-                <input
-                  id="document-file"
-                  type="file"
-                  accept=".txt,.md,.markdown,text/plain,text/markdown"
-                />
-              </label>
-              <p class="workspace-only helper-text">
-                Import stays in this tab. Text is sent to your selected provider
-                only when you request an AI action. Up to 2 million characters.
-              </p>
+      <main class="main-content" id="main-content">
+        <section
+          class="tab-pane active"
+          id="summary-tab"
+          role="tabpanel"
+          aria-labelledby="summary-tab-button"
+          tabindex="0"
+        >
+          <div class="section-header">
+            <span class="eyebrow">The big picture</span>
+            <h2>Summarize this document.</h2>
+            <p>
+              A focused summary of your source, at the level of detail you need.
+            </p>
+          </div>
+          <div class="summary-toolbar">
+            <div class="summary-controls">
+              <label class="field-label" for="summary-type">Format</label
+              ><select id="summary-type" class="modern-select">
+                <option value="key-points">Key points</option>
+                <option value="tldr">TL;DR</option>
+                <option value="executive">Executive summary</option>
+                <option value="technical">Technical summary</option>
+              </select>
             </div>
-            <div class="section-header">
-              <h2>Content Summary</h2>
-              <div class="summary-controls">
-                <select
-                  id="summary-type"
-                  class="modern-select"
-                  aria-label="Summary style"
+            <fieldset class="length-control">
+              <legend class="field-label">Length</legend>
+              <div class="length-selector">
+                <label class="radio-label"
+                  ><input
+                    type="radio"
+                    name="summary-length"
+                    value="short"
+                    checked
+                  /><span class="radio-text">Short</span></label
                 >
-                  <option value="key-points">Key Points</option>
-                  <option value="tldr">TL;DR</option>
-                  <option value="executive">Executive Summary</option>
-                  <option value="technical">Technical Summary</option>
-                </select>
-                <div class="length-selector">
-                  <label class="radio-label">
-                    <input
-                      type="radio"
-                      name="summary-length"
-                      value="short"
-                      checked
-                    />
-                    <span class="radio-text">Short</span>
-                  </label>
-                  <label class="radio-label">
-                    <input type="radio" name="summary-length" value="medium" />
-                    <span class="radio-text">Medium</span>
-                  </label>
-                  <label class="radio-label">
-                    <input type="radio" name="summary-length" value="long" />
-                    <span class="radio-text">Long</span>
-                  </label>
-                </div>
+                <label class="radio-label"
+                  ><input
+                    type="radio"
+                    name="summary-length"
+                    value="medium"
+                  /><span class="radio-text">Medium</span></label
+                >
+                <label class="radio-label"
+                  ><input
+                    type="radio"
+                    name="summary-length"
+                    value="long"
+                  /><span class="radio-text">Long</span></label
+                >
               </div>
-            </div>
-
-            <div class="action-buttons">
-              <button class="primary-button" id="generate-summary-btn">
-                <span class="button-icon">✨</span>
-                Generate Summary
-              </button>
-            </div>
-
-            <div
-              class="results-container"
-              id="summary-results"
-              style="display: none"
+            </fieldset>
+            <button class="primary-button" id="generate-summary-btn">
+              Generate summary <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+          <div class="summary-empty" id="summary-empty">
+            <svg
+              class="empty-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.65"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
             >
-              <div class="result-header">
-                <h3>Summary Result</h3>
-                <div class="result-meta">
-                  <span class="provider-badge" id="summary-provider"></span>
-                  <span class="confidence-score" id="summary-confidence"></span>
-                </div>
-              </div>
-              <div class="result-content" id="summary-content"></div>
+              <path d="M4 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-3H4z" />
+              <path d="M20 4h-4a3 3 0 0 0-3 3v14a4 4 0 0 1 4-3h3z" />
+            </svg>
+            <h3>Your summary starts here.</h3>
+            <p>
+              Your summary will appear here, with the provider and source
+              coverage. You can copy it or save it as a file.
+            </p>
+            <span class="empty-caption"
+              >Choose a format above, then generate.</span
+            >
+          </div>
+          <div
+            class="results-container"
+            id="summary-results"
+            style="display: none"
+          >
+            <div class="result-header">
+              <h3>Your summary</h3>
               <div class="result-actions">
-                <button class="action-button" id="copy-summary-btn">
-                  📋 Copy
-                </button>
-                <button class="action-button" id="export-summary-btn">
-                  📤 Export
+                <button class="action-button" id="copy-summary-btn">Copy</button
+                ><button class="action-button" id="export-summary-btn">
+                  Export
                 </button>
               </div>
             </div>
+            <div class="result-meta">
+              <span class="provider-badge" id="summary-provider"></span
+              ><span class="confidence-score" id="summary-confidence"></span>
+            </div>
+            <div class="result-content" id="summary-content"></div>
           </div>
         </section>
-
-        <!-- Chat Tab -->
-        <section class="tab-pane" id="chat-tab">
+        <section
+          class="tab-pane"
+          id="chat-tab"
+          role="tabpanel"
+          aria-labelledby="chat-tab-button"
+          tabindex="0"
+          hidden
+        >
+          <div class="section-header">
+            <span class="eyebrow">Learn from your source</span>
+            <h2>Ask about this document.</h2>
+            <p>
+              Explore a concept, connect the ideas, or test your understanding.
+            </p>
+          </div>
           <div class="chat-memory-controls">
             <p id="chat-memory-status" role="status" aria-live="polite">
               Chats stay with this document
@@ -198,279 +429,407 @@
             </button>
           </div>
           <div class="chat-container">
-            <div class="chat-history" id="chat-history">
-              <div class="welcome-message">
-                <div class="assistant-avatar">🤖</div>
-                <div class="message-content">
-                  <p>
-                    Hello! I'm your AI assistant. I can help you understand this
-                    page's content, answer questions, and provide insights. What
-                    would you like to know?
-                  </p>
-                </div>
-              </div>
+            <div
+              class="chat-history"
+              id="chat-history"
+              role="log"
+              aria-label="Conversation"
+              aria-live="polite"
+            ></div>
+            <div class="chat-empty">
+              <h3>What would you like to understand?</h3>
+              <p>
+                Ask about this document. Source excerpts accompany answers when
+                available.
+              </p>
             </div>
-
             <div class="chat-input-container">
+              <label class="field-label" for="chat-input"
+                >Ask about this document</label
+              >
               <div class="input-wrapper">
                 <textarea
                   id="chat-input"
-                  aria-label="Ask a question about this document"
-                  placeholder="Ask me anything about this page..."
-                  rows="1"
+                  placeholder="What does the author mean by…"
+                  rows="2"
                   maxlength="1000"
-                ></textarea>
-                <button
+                  aria-describedby="chat-input-help"
+                ></textarea
+                ><button
                   class="send-button"
                   id="send-chat-btn"
                   aria-label="Send question"
                 >
                   <svg
+                    class="icon"
                     width="20"
                     height="20"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="2"
+                    stroke-width="1.65"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
                   >
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                    <path d="m4 12 16-8-5 16-4-7-7-1Z" />
+                    <path d="m11 13 9-9" />
                   </svg>
                 </button>
               </div>
-              <div class="input-suggestions">
-                <button class="suggestion-chip">What's the main topic?</button>
-                <button class="suggestion-chip">Key takeaways?</button>
-                <button class="suggestion-chip">Explain in simple terms</button>
-                <button class="suggestion-chip">
-                  Make a study guide with key concepts and examples from this
-                  document
+              <div class="input-suggestions" aria-label="Suggested questions">
+                <button
+                  class="suggestion-chip"
+                  data-prompt="What's the main topic?"
+                >
+                  Main idea
                 </button>
-                <button class="suggestion-chip">
-                  Quiz me with five source-based questions. Give hints and wait
-                  for my answers.
+                <button class="suggestion-chip" data-prompt="Key takeaways?">
+                  Key takeaways
+                </button>
+                <button
+                  class="suggestion-chip"
+                  data-prompt="Explain in simple terms"
+                >
+                  Explain simply
+                </button>
+                <button
+                  class="suggestion-chip"
+                  data-prompt="Make a study guide with key concepts and examples from this document"
+                >
+                  Study guide
+                </button>
+                <button
+                  class="suggestion-chip"
+                  data-prompt="Quiz me with five source-based questions. Give hints and wait for my answers."
+                >
+                  Quiz me
                 </button>
               </div>
+              <p class="helper-text" id="chat-input-help">
+                Enter to send · Shift + Enter for a new line. Check source
+                excerpts before relying on an answer.
+              </p>
             </div>
           </div>
         </section>
-
-        <!-- Translate Tab -->
-        <section class="tab-pane" id="translate-tab">
-          <div class="content-section">
-            <div class="section-header">
-              <h2>Translation Tools</h2>
-            </div>
-
-            <div class="translation-controls">
-              <div class="language-selector">
-                <div class="language-input">
-                  <label for="source-language">From:</label>
-                  <select id="source-language" class="modern-select">
-                    <option value="auto">Auto-detect</option>
-                    <option value="en">English</option>
-                    <option value="es">Spanish</option>
-                    <option value="fr">French</option>
-                    <option value="de">German</option>
-                    <option value="zh">Chinese</option>
-                    <option value="ja">Japanese</option>
-                    <option value="ko">Korean</option>
-                    <option value="ru">Russian</option>
-                    <option value="ar">Arabic</option>
-                    <option value="hi">Hindi</option>
-                  </select>
-                </div>
-                <div class="language-swap">
-                  <button class="icon-button" id="swap-languages">⇄</button>
-                </div>
-                <div class="language-input">
-                  <label for="target-language">To:</label>
-                  <select id="target-language" class="modern-select">
-                    <option value="en">English</option>
-                    <option value="es">Spanish</option>
-                    <option value="fr">French</option>
-                    <option value="de">German</option>
-                    <option value="zh">Chinese</option>
-                    <option value="ja">Japanese</option>
-                    <option value="ko">Korean</option>
-                    <option value="ru">Russian</option>
-                    <option value="ar">Arabic</option>
-                    <option value="hi">Hindi</option>
-                  </select>
-                </div>
+        <section
+          class="tab-pane"
+          id="translate-tab"
+          role="tabpanel"
+          aria-labelledby="translate-tab-button"
+          tabindex="0"
+          hidden
+        >
+          <div class="section-header">
+            <span class="eyebrow">Across languages</span>
+            <h2>Translate this document.</h2>
+            <p>
+              Translate your source into a language you are comfortable with.
+            </p>
+          </div>
+          <div class="translation-controls">
+            <div class="language-selector">
+              <div class="language-input">
+                <label class="field-label" for="source-language">From</label
+                ><select id="source-language" class="modern-select">
+                  <option value="auto">Auto-detect</option>
+                  <option value="en">English</option>
+                  <option value="es">Spanish</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="zh">Chinese</option>
+                  <option value="ja">Japanese</option>
+                  <option value="ko">Korean</option>
+                  <option value="ru">Russian</option>
+                  <option value="ar">Arabic</option>
+                  <option value="hi">Hindi</option>
+                </select>
               </div>
-
-              <div class="translation-options">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="translate-page" checked />
-                  <span class="checkbox-text">Translate entire page</span>
-                </label>
+              <button
+                class="icon-button language-swap"
+                id="swap-languages"
+                aria-label="Swap languages"
+                title="Swap languages"
+              >
+                <span aria-hidden="true">⇄</span>
+              </button>
+              <div class="language-input">
+                <label class="field-label" for="target-language">To</label
+                ><select id="target-language" class="modern-select">
+                  <option value="en">English</option>
+                  <option value="es">Spanish</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="zh">Chinese</option>
+                  <option value="ja">Japanese</option>
+                  <option value="ko">Korean</option>
+                  <option value="ru">Russian</option>
+                  <option value="ar">Arabic</option>
+                  <option value="hi">Hindi</option>
+                </select>
               </div>
             </div>
-
-            <div class="action-buttons">
-              <button class="primary-button" id="translate-btn">
-                <span class="button-icon">🌐</span>
-                Translate Content
+            <label class="checkbox-label"
+              ><input type="checkbox" id="translate-page" checked /><span
+                >Use page text
+                <span class="helper-text"
+                  >(uncheck for the first 2,000 characters)</span
+                ></span
+              ></label
+            >
+            <p class="helper-text">
+              Translation uses up to the first 24,000 characters. Longer text is
+              marked as partial.
+            </p>
+          </div>
+          <button class="primary-button" id="translate-btn">
+            Translate content <span aria-hidden="true">↗</span>
+          </button>
+          <div
+            class="results-container"
+            id="translation-results"
+            style="display: none"
+          >
+            <div class="result-header">
+              <h3>Your translation</h3>
+              <button class="action-button" id="copy-translation-btn">
+                Copy
               </button>
             </div>
-
-            <div
-              class="results-container"
-              id="translation-results"
-              style="display: none"
-            >
-              <div class="result-header">
-                <h3>Translation Result</h3>
-                <div class="result-meta">
-                  <span class="language-badge" id="detected-language"></span>
-                  <span
-                    class="confidence-score"
-                    id="translation-confidence"
-                  ></span>
-                </div>
-              </div>
-              <div class="result-content" id="translation-content"></div>
-              <div class="result-actions">
-                <button class="action-button" id="copy-translation-btn">
-                  📋 Copy
-                </button>
-              </div>
+            <div class="result-meta">
+              <span class="language-badge" id="detected-language"></span
+              ><span
+                class="confidence-score"
+                id="translation-confidence"
+              ></span>
             </div>
+            <div class="result-content" id="translation-content"></div>
           </div>
         </section>
-
-        <!-- Analyze Tab -->
-        <section class="tab-pane" id="analyze-tab">
-          <div class="content-section">
-            <div class="section-header">
-              <h2>Content Analysis</h2>
-            </div>
-
-            <div class="analysis-grid">
-              <div class="analysis-card">
-                <div class="card-header">
-                  <h3>📊 Sentiment Analysis</h3>
-                  <button class="analyze-btn" data-type="sentiment">
-                    Analyze
-                  </button>
-                </div>
-                <div class="analysis-result" id="sentiment-result">
-                  <div class="placeholder">Click analyze to start</div>
-                </div>
-              </div>
-
-              <div class="analysis-card">
-                <div class="card-header">
-                  <h3>📈 Readability Score</h3>
-                  <button class="analyze-btn" data-type="readability">
-                    Analyze
-                  </button>
-                </div>
-                <div class="analysis-result" id="readability-result">
-                  <div class="placeholder">Click analyze to start</div>
-                </div>
-              </div>
-
-              <div class="analysis-card">
-                <div class="card-header">
-                  <h3>🏷️ Smart Tags</h3>
-                  <button class="analyze-btn" data-type="tags">Generate</button>
-                </div>
-                <div class="analysis-result" id="tags-result">
-                  <div class="placeholder">Click generate to start</div>
-                </div>
-              </div>
-
-              <div class="analysis-card">
-                <div class="card-header">
-                  <h3>🔍 Key Insights</h3>
-                  <button class="analyze-btn" data-type="insights">
-                    Extract
-                  </button>
-                </div>
-                <div class="analysis-result" id="insights-result">
-                  <div class="placeholder">Click extract to start</div>
-                </div>
-              </div>
-
-              <div class="analysis-card">
-                <div class="card-header">
-                  <h3>🏛️ Entities</h3>
-                  <button class="analyze-btn" data-type="entities">
-                    Extract
-                  </button>
-                </div>
-                <div class="analysis-result" id="entities-result">
-                  <div class="placeholder">
-                    People, organizations, places, products, dates
-                  </div>
-                </div>
-              </div>
-            </div>
+        <section
+          class="tab-pane"
+          id="analyze-tab"
+          role="tabpanel"
+          aria-labelledby="analyze-tab-button"
+          tabindex="0"
+          hidden
+        >
+          <div class="section-header">
+            <span class="eyebrow">Look a little closer</span>
+            <h2>Analyze this document.</h2>
+            <p>
+              Each analysis runs separately. AI analyses use up to 24,000
+              characters.
+            </p>
           </div>
-        </section>
-
-        <!-- Tools Tab -->
-        <section class="tab-pane" id="tools-tab">
-          <div class="content-section">
-            <div class="section-header">
-              <h2>Productivity Tools</h2>
-            </div>
-
-            <div class="tools-grid">
-              <div class="tool-card">
-                <div class="tool-icon">📤</div>
-                <h3>Export Data</h3>
-                <p>
-                  Export your settings, saved summaries, and chat history as
-                  JSON
-                </p>
-                <button class="tool-button" id="export-data-btn">Export</button>
-              </div>
-
-              <div class="tool-card">
-                <div class="tool-icon">📊</div>
-                <h3>Page Stats</h3>
-                <p>Get detailed statistics about this page</p>
-                <button class="tool-button" id="page-stats-btn">
-                  View Stats
+          <div class="analysis-grid">
+            <article class="analysis-card">
+              <div class="card-header">
+                <h3>Sentiment</h3>
+                <button
+                  class="analyze-btn"
+                  data-type="sentiment"
+                  aria-label="Analyze sentiment"
+                >
+                  Analyze
                 </button>
               </div>
-
-              <div class="tool-card">
-                <div class="tool-icon">🔗</div>
-                <h3>Extract Links</h3>
-                <p>Extract and categorize all page links</p>
-                <button class="tool-button" id="extract-links-btn">
+              <p class="card-description">Understand the tone and attitude.</p>
+              <div class="analysis-result" id="sentiment-result">
+                <span class="placeholder">No result yet</span>
+              </div>
+            </article>
+            <article class="analysis-card">
+              <div class="card-header">
+                <h3>Readability</h3>
+                <button
+                  class="analyze-btn"
+                  data-type="readability"
+                  aria-label="Calculate readability"
+                >
+                  Calculate
+                </button>
+              </div>
+              <p class="card-description">
+                A local reading-ease estimate. No AI request.
+              </p>
+              <div class="analysis-result" id="readability-result">
+                <span class="placeholder">No result yet</span>
+              </div>
+            </article>
+            <article class="analysis-card">
+              <div class="card-header">
+                <h3>Topic tags</h3>
+                <button
+                  class="analyze-btn"
+                  data-type="tags"
+                  aria-label="Generate topic tags"
+                >
+                  Generate
+                </button>
+              </div>
+              <p class="card-description">
+                Find the topics that connect this source.
+              </p>
+              <div class="analysis-result" id="tags-result">
+                <span class="placeholder">No result yet</span>
+              </div>
+            </article>
+            <article class="analysis-card">
+              <div class="card-header">
+                <h3>Key insights</h3>
+                <button
+                  class="analyze-btn"
+                  data-type="insights"
+                  aria-label="Extract key insights"
+                >
                   Extract
                 </button>
               </div>
-            </div>
-
-            <div class="tools-results" id="tools-results" style="display: none">
-              <div class="results-header">
-                <h3>Tool Results</h3>
-                <button class="close-results" id="close-tools-results">
-                  ×
+              <p class="card-description">Surface ideas worth a closer look.</p>
+              <div class="analysis-result" id="insights-result">
+                <span class="placeholder">No result yet</span>
+              </div>
+            </article>
+            <article class="analysis-card">
+              <div class="card-header">
+                <h3>Entities</h3>
+                <button
+                  class="analyze-btn"
+                  data-type="entities"
+                  aria-label="Extract entities"
+                >
+                  Extract
                 </button>
               </div>
-              <div class="results-content" id="tools-results-content"></div>
+              <p class="card-description">
+                Find people, organizations, places, products, and dates.
+              </p>
+              <div class="analysis-result" id="entities-result">
+                <span class="placeholder">No result yet</span>
+              </div>
+            </article>
+          </div>
+        </section>
+        <section
+          class="tab-pane"
+          id="tools-tab"
+          role="tabpanel"
+          aria-labelledby="tools-tab-button"
+          tabindex="0"
+          hidden
+        >
+          <div class="section-header">
+            <span class="eyebrow">Keep it useful</span>
+            <h2>Document tools.</h2>
+            <p>
+              Inspect the source or export your saved work. These tools run
+              locally.
+            </p>
+          </div>
+          <div class="tools-grid">
+            <article class="tool-card">
+              <svg
+                class="icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.65"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M5 4v16M12 4v16M19 4v16" />
+                <path d="M2 8h6M9 16h6M16 9h6" />
+              </svg>
+              <h3>Export data</h3>
+              <p>
+                Save settings, summaries, and chats as JSON. API keys are
+                excluded.
+              </p>
+              <button class="tool-button" id="export-data-btn">
+                Export JSON <span aria-hidden="true">↗</span>
+              </button>
+            </article>
+            <article class="tool-card">
+              <svg
+                class="icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.65"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="10" cy="10" r="7" />
+                <path d="m15 15 6 6M7 12V9m3 3V6m3 6v-2" />
+              </svg>
+              <h3>Document statistics</h3>
+              <p>Word count, reading time, language, and headings.</p>
+              <button class="tool-button" id="page-stats-btn">
+                View statistics <span aria-hidden="true">↗</span>
+              </button>
+            </article>
+            <article class="tool-card">
+              <svg
+                class="icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.65"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M14 3h7v7M21 3l-9 9M9 3H3v18h18v-6" />
+              </svg>
+              <h3>Page links</h3>
+              <p>List links from the original web page.</p>
+              <button class="tool-button" id="extract-links-btn">
+                Extract links <span aria-hidden="true">↗</span>
+              </button>
+            </article>
+          </div>
+          <div class="tools-results" id="tools-results" style="display: none">
+            <div class="result-header">
+              <h3>Tool results</h3>
+              <button
+                class="icon-button"
+                id="close-tools-results"
+                aria-label="Close tool results"
+              >
+                ×
+              </button>
             </div>
+            <div class="results-content" id="tools-results-content"></div>
           </div>
         </section>
       </main>
-
-      <!-- Loading Overlay -->
-      <div class="loading-overlay" id="loading-overlay">
-        <div class="loading-spinner"></div>
-        <div class="loading-text" id="loading-text">Processing...</div>
+      <div
+        class="loading-overlay"
+        id="loading-overlay"
+        role="status"
+        aria-live="polite"
+      >
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <div class="loading-text" id="loading-text">Processing…</div>
+        <p>Your source is being processed. This can take a moment.</p>
       </div>
-
-      <!-- Toast Notifications -->
-      <div class="toast-container" id="toast-container"></div>
+      <div
+        class="toast-container"
+        id="toast-container"
+        role="status"
+        aria-live="polite"
+      ></div>
     </div>
-
     <script type="module" src="scripts/popup-main.js"></script>
   </body>
 </html>

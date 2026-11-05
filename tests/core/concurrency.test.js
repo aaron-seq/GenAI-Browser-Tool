@@ -19,12 +19,16 @@ describe('mapWithConcurrency', () => {
     let inFlight = 0;
     let peak = 0;
 
-    await mapWithConcurrency(Array.from({ length: 8 }, (_, i) => i), 3, async () => {
-      inFlight += 1;
-      peak = Math.max(peak, inFlight);
-      await sleep(5);
-      inFlight -= 1;
-    });
+    await mapWithConcurrency(
+      Array.from({ length: 8 }, (_, i) => i),
+      3,
+      async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await sleep(5);
+        inFlight -= 1;
+      }
+    );
 
     // The whole point: eight sections must not become eight simultaneous
     // requests, which is a reliable way to trip a per-minute rate limit.
@@ -33,8 +37,10 @@ describe('mapWithConcurrency', () => {
   });
 
   it('passes the index through', async () => {
-    const seen = await mapWithConcurrency(['a', 'b', 'c'], 2, async (item, index) =>
-      `${index}:${item}`
+    const seen = await mapWithConcurrency(
+      ['a', 'b', 'c'],
+      2,
+      async (item, index) => `${index}:${item}`
     );
     expect(seen).toEqual(['0:a', '1:b', '2:c']);
   });
@@ -44,7 +50,9 @@ describe('mapWithConcurrency', () => {
   });
 
   it('handles fewer items than the limit', async () => {
-    await expect(mapWithConcurrency([1, 2], 8, async n => n * 2)).resolves.toEqual([2, 4]);
+    await expect(
+      mapWithConcurrency([1, 2], 8, async n => n * 2)
+    ).resolves.toEqual([2, 4]);
   });
 
   it('propagates a rejection', async () => {
@@ -54,5 +62,31 @@ describe('mapWithConcurrency', () => {
         return n;
       })
     ).rejects.toThrow('section failed');
+  });
+
+  it('does not start queued work when in-flight siblings finish after a failure', async () => {
+    let rejectFirst;
+    let finishSiblings;
+    const first = new Promise((_resolve, reject) => {
+      rejectFirst = reject;
+    });
+    const siblings = new Promise(resolve => {
+      finishSiblings = resolve;
+    });
+    const started = [];
+    const work = mapWithConcurrency([0, 1, 2, 3, 4, 5, 6, 7], 3, item => {
+      started.push(item);
+      return item === 0 ? first : siblings.then(() => item);
+    });
+    const failure = new Error('section failed');
+    const rejected = expect(work).rejects.toBe(failure);
+
+    expect(started).toEqual([0, 1, 2]);
+    rejectFirst(failure);
+    await rejected;
+    finishSiblings();
+    await sleep(0);
+
+    expect(started).toEqual([0, 1, 2]);
   });
 });

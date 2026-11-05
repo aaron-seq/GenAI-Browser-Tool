@@ -71,6 +71,7 @@ const mockChrome = {
   commands: { onCommand: { addListener: vi.fn() } },
   notifications: { create: vi.fn(), clear: vi.fn() },
   alarms: {
+    get: vi.fn().mockResolvedValue(undefined),
     create: vi.fn(),
     clear: vi.fn(),
     onAlarm: { addListener: vi.fn() },

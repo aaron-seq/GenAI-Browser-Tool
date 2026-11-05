@@ -21,6 +21,9 @@ class PopupInterface {
     /** @type {any} */
     this.preferences = null;
     this.warnedAboutChatTruncation = false;
+    this.documentGeneration = 0;
+    this.chatGeneration = 0;
+    this.chatHistoryPending = false;
     /** @type {number | null} */
     this.sourceTabId = null;
     const params = new URLSearchParams(window.location.search);
@@ -31,17 +34,20 @@ class PopupInterface {
   }
 
   async initialize() {
+    const generation = this.documentGeneration;
     this.setupEventListeners();
     try {
       await this.applyPreferences();
       await this.updateProviderStatus();
-      await this.extractCurrentPageContent();
+      if (this.documentGeneration !== generation) return;
+      await this.extractCurrentPageContent(generation);
     } catch (error) {
       const err = /** @type {Error} */ (error);
+      if (this.documentGeneration !== generation) return;
       this.setPageInfo('Could not read this document', err.message);
       this.showToast(err.message, 'error');
     } finally {
-      this.hideLoading();
+      if (!this.isProcessing) this.hideLoading();
     }
   }
 
@@ -90,6 +96,26 @@ class PopupInterface {
           .tab;
         if (tab) this.switchToTab(tab);
       });
+      button.addEventListener('keydown', event => {
+        const e = /** @type {KeyboardEvent} */ (event);
+        const tabs = Array.from(document.querySelectorAll('.tab-button'));
+        const current = tabs.indexOf(button);
+        const next =
+          e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? tabs.length - 1
+              : e.key === 'ArrowRight'
+                ? (current + 1) % tabs.length
+                : e.key === 'ArrowLeft'
+                  ? (current + tabs.length - 1) % tabs.length
+                  : -1;
+        if (next < 0) return;
+        e.preventDefault();
+        const target = /** @type {HTMLElement} */ (tabs[next]);
+        if (target.dataset.tab) this.switchToTab(target.dataset.tab);
+        target.focus();
+      });
     });
 
     on('settings-btn', 'click', () => chrome.runtime.openOptionsPage());
@@ -116,7 +142,9 @@ class PopupInterface {
       chip.addEventListener('click', event => {
         setValue(
           'chat-input',
-          /** @type {HTMLElement} */ (event.target).textContent || ''
+          /** @type {HTMLElement} */ (event.currentTarget).dataset.prompt ||
+            /** @type {HTMLElement} */ (event.currentTarget).textContent ||
+            ''
         );
         this.sendChatMessage();
       });
@@ -124,8 +152,12 @@ class PopupInterface {
 
     on('translate-btn', 'click', () => this.translateContent());
     on('swap-languages', 'click', () => this.swapLanguages());
-    on('source-language', 'change', () => this.persistLanguages());
-    on('target-language', 'change', () => this.persistLanguages());
+    on('source-language', 'change', () =>
+      this.persistLanguages('sourceLanguage')
+    );
+    on('target-language', 'change', () =>
+      this.persistLanguages('targetLanguage')
+    );
     on('copy-translation-btn', 'click', () =>
       this.copyToClipboard('translation-content')
     );
@@ -146,19 +178,24 @@ class PopupInterface {
 
   /** @param {string} tabName */
   switchToTab(tabName) {
-    document
-      .querySelectorAll('.tab-button.active, .tab-pane.active')
-      .forEach(el => el.classList.remove('active'));
-    document
-      .querySelector(`.tab-button[data-tab="${tabName}"]`)
-      ?.classList.add('active');
-    document.getElementById(`${tabName}-tab`)?.classList.add('active');
-    if (tabName === 'chat') document.getElementById('chat-input')?.focus();
+    document.querySelectorAll('.tab-button').forEach(button => {
+      const tab = /** @type {HTMLElement} */ (button);
+      const selected = tab.dataset.tab === tabName;
+      tab.classList.toggle('active', selected);
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      const panel = document.getElementById(`${tab.dataset.tab}-tab`);
+      if (panel) {
+        panel.classList.toggle('active', selected);
+        panel.hidden = !selected;
+      }
+    });
   }
 
   // ------------------------------------------------------------------ content
 
-  async extractCurrentPageContent() {
+  /** @param {number} [generation] */
+  async extractCurrentPageContent(generation = this.documentGeneration) {
     const requestedTab = Number(
       new URLSearchParams(window.location.search).get('tabId')
     );
@@ -166,6 +203,8 @@ class PopupInterface {
       Number.isSafeInteger(requestedTab) && requestedTab > 0
         ? await chrome.tabs.get(requestedTab)
         : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+
+    if (this.documentGeneration !== generation) return;
 
     if (!activeTab?.id || (activeTab.url && !/^https?:/.test(activeTab.url))) {
       this.setPageInfo(
@@ -181,17 +220,22 @@ class PopupInterface {
     const response = await this.send('EXTRACT_PAGE_CONTENT', {
       tabId: activeTab.id,
     });
+    if (this.documentGeneration !== generation) return;
     if (!response.success) {
       this.setPageInfo(activeTab.title || 'Untitled', response.error);
       return;
     }
 
-    await this.acceptDocument(response.data);
+    await this.acceptDocument(response.data, generation);
   }
 
-  /** @param {any} content */
-  async acceptDocument(content) {
+  /** @param {any} content @param {number} [generation] */
+  async acceptDocument(content, generation) {
     validateDocument(content.mainText);
+    if (generation === undefined) generation = ++this.documentGeneration;
+    if (generation !== this.documentGeneration) return;
+    const chatGeneration = ++this.chatGeneration;
+    this.chatHistoryPending = true;
     this.pageContent = content;
     this.conversationHistory = [];
     this.lastSummary = null;
@@ -199,6 +243,7 @@ class PopupInterface {
     this.warnedAboutChatTruncation = false;
     if (content.url?.startsWith('local-document:')) this.sourceTabId = null;
     hide('summary-results');
+    show('summary-empty', 'flex');
     hide('translation-results');
     hide('tools-results');
     document.querySelectorAll('.analysis-result').forEach(result => {
@@ -225,6 +270,10 @@ class PopupInterface {
       content: content.mainText,
     });
     if (this.pageContent !== content) return;
+    if (response.success && response.data.summaries?.[0] && !this.lastSummary)
+      this.renderSummary(response.data.summaries[0], true);
+    if (this.chatGeneration !== chatGeneration) return;
+    this.chatHistoryPending = false;
     const conversations = response.success
       ? response.data.conversations || []
       : [];
@@ -237,8 +286,6 @@ class PopupInterface {
         { role: 'assistant', content: exchange.answer }
       );
     }
-    if (response.success && response.data.summaries?.[0])
-      this.renderSummary(response.data.summaries[0], true);
     setText(
       'chat-memory-status',
       !response.success
@@ -291,17 +338,26 @@ class PopupInterface {
         content: this.pageContent.mainText,
       });
       if (!response.success) throw new Error(response.error);
+      this.chatGeneration += 1;
+      this.chatHistoryPending = false;
       this.conversationHistory = [];
       setHtml('chat-history', '');
       setText('chat-memory-status', 'Chat cleared for this document');
     });
   }
 
-  async persistLanguages() {
-    const response = await this.send('UPDATE_USER_PREFERENCES', {
+  /** @param {'sourceLanguage' | 'targetLanguage'} [changed] */
+  async persistLanguages(changed) {
+    const languages = {
       targetLanguage: value('target-language'),
       sourceLanguage: value('source-language'),
-    });
+    };
+    // A single control change must not overwrite a sibling edited in Settings.
+    // An explicit swap changes both controls and therefore persists both.
+    const response = await this.send(
+      'UPDATE_USER_PREFERENCES',
+      changed ? { [changed]: languages[changed] } : languages
+    );
     if (!response.success) this.showToast(response.error, 'error');
   }
 
@@ -335,6 +391,7 @@ class PopupInterface {
       `${cached ? 'Saved summary · ' : ''}${describeCoverage(data)}`
     );
     show('summary-results');
+    hide('summary-empty');
     if (data.historyWarning) {
       setText('summary-confidence', `${describeCoverage(data)} · Not saved`);
       this.showToast(data.historyWarning, 'warning');
@@ -346,6 +403,11 @@ class PopupInterface {
     const question = value('chat-input').trim();
     if (!question || !this.requireContent()) return;
 
+    this.chatGeneration += 1;
+    if (this.chatHistoryPending) {
+      this.chatHistoryPending = false;
+      setText('chat-memory-status', 'Current conversation');
+    }
     setValue('chat-input', '');
     this.addChatMessage('user', question);
 
@@ -419,6 +481,7 @@ class PopupInterface {
   /** @param {string} type */
   async runAnalysis(type) {
     if (!this.requireContent()) return;
+    const content = this.pageContent;
 
     const target = document.getElementById(`${type}-result`);
     if (target) target.innerHTML = '<div class="loading-spinner"></div>';
@@ -443,8 +506,9 @@ class PopupInterface {
       if (!action) throw new Error(`No analysis available for "${type}"`);
 
       const response = await this.send(action, {
-        text: this.pageContent.mainText,
+        text: content.mainText,
       });
+      if (this.pageContent !== content) return;
       if (!response.success) throw new Error(response.error);
 
       if (!target) return;
@@ -465,7 +529,8 @@ class PopupInterface {
     } catch (error) {
       /** @type {any} */
       const err = error;
-      if (target) target.textContent = err.message;
+      if (this.pageContent === content && target)
+        target.textContent = err.message;
     }
   }
 
@@ -485,6 +550,7 @@ class PopupInterface {
   }
 
   async extractPageLinks() {
+    const content = this.pageContent;
     if (!this.sourceTabId) {
       this.showToolsResult(
         '<p>Links are available for a source web page. Imported text has no live page links.</p>'
@@ -496,6 +562,7 @@ class PopupInterface {
       const response = await chrome.tabs.sendMessage(this.sourceTabId, {
         action: 'extractLinks',
       });
+      if (this.pageContent !== content) return;
       if (!response?.success)
         throw new Error(response?.error || 'Could not read links');
 
@@ -511,7 +578,8 @@ class PopupInterface {
     } catch (error) {
       /** @type {any} */
       const err = error;
-      this.showToolsResult(`<p>${escapeHtml(err.message)}</p>`);
+      if (this.pageContent === content)
+        this.showToolsResult(`<p>${escapeHtml(err.message)}</p>`);
     }
   }
 
@@ -623,7 +691,7 @@ class PopupInterface {
 
     const avatar = document.createElement('div');
     avatar.className = `${role}-avatar`;
-    avatar.textContent = role === 'user' ? '👤' : '🤖';
+    avatar.textContent = role === 'user' ? 'You' : 'GenAI';
 
     const body = document.createElement('div');
     body.className = 'message-content';
@@ -639,6 +707,9 @@ class PopupInterface {
     if (!Array.isArray(sources) || !sources.length) return;
     const details = document.createElement('details');
     details.className = 'chat-sources';
+    details.addEventListener('toggle', () => {
+      if (details.open) details.scrollIntoView?.({ block: 'nearest' });
+    });
     const summary = document.createElement('summary');
     summary.textContent = retrieval
       ? `${sources.length} of ${retrieval.total} passages used · ${retrieval.mode === 'overview' ? 'representative overview' : 'matched to your question'}`
@@ -703,10 +774,12 @@ class PopupInterface {
   /** @param {string} message */
   showLoading(message) {
     setText('loading-text', message);
+    document.getElementById('main-content')?.setAttribute('aria-busy', 'true');
     show('loading-overlay', 'flex');
   }
 
   hideLoading() {
+    document.getElementById('main-content')?.setAttribute('aria-busy', 'false');
     hide('loading-overlay');
   }
 }

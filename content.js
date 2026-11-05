@@ -12,8 +12,9 @@ class PageContentExtractor {
     chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       this.handleMessage(request)
         .then(data => sendResponse({ success: true, data }))
-        .catch(/** @param {any} error */ error =>
-          sendResponse({ success: false, error: error.message })
+        .catch(
+          /** @param {any} error */ error =>
+            sendResponse({ success: false, error: error.message })
         );
       return true; // async sendResponse
     });
@@ -49,24 +50,34 @@ class PageContentExtractor {
       headings: this.extractHeadings(),
       metadata: this.getPageMetadata(),
       language: document.documentElement.lang || 'unknown',
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
   }
 
   getPageTitle() {
-    return document.title || document.querySelector('h1')?.textContent?.trim() || 'Untitled Page';
+    return (
+      document.title ||
+      document.querySelector('h1')?.textContent?.trim() ||
+      'Untitled Page'
+    );
   }
 
   /**
-   * Take the most specific container that looks like article content, then strip
-   * chrome (nav, ads, comments) from a clone so the live page is never touched.
+   * Read the most specific article container without changing the live page.
+   * A detached clone loses CSS visibility and innerText's block boundaries.
    *
    * @returns {string}
    */
   getMainText() {
     const selectors = [
-      'article', '[role="main"]', 'main', '.post-content', '.entry-content',
-      '#content', '.story-body', 'body'
+      'article',
+      '[role="main"]',
+      'main',
+      '.post-content',
+      '.entry-content',
+      '#content',
+      '.story-body',
+      'body',
     ];
     const mainElement = selectors
       .map(selector => document.querySelector(selector))
@@ -74,25 +85,104 @@ class PageContentExtractor {
 
     if (!mainElement) return '';
 
-    const clone = /** @type {HTMLElement} */ (mainElement.cloneNode(true));
     const unwanted = [
-      'script', 'style', 'noscript', 'nav', 'header', 'footer', 'aside',
-      '.ad', '.sidebar', '.comments', '[role="navigation"]', '[role="banner"]'
-    ];
-    unwanted.forEach(selector => {
-      clone.querySelectorAll(selector).forEach(element => element.remove());
-    });
+      'script',
+      'style',
+      'noscript',
+      'nav',
+      'header',
+      'footer',
+      'aside',
+      '.ad',
+      '.sidebar',
+      '.comments',
+      '[role="navigation"]',
+      '[role="banner"]',
+    ].join(',');
+    /** @type {Map<Element, CSSStyleDeclaration>} */
+    const styles = new Map();
+    /** @param {Element} element */
+    const styleFor = element => {
+      let style = styles.get(element);
+      if (!style) {
+        style = window.getComputedStyle(element);
+        styles.set(element, style);
+      }
+      return style;
+    };
+    // A selected article can itself be inside a non-rendered container.
+    for (
+      let parent = mainElement.parentElement;
+      parent;
+      parent = parent.parentElement
+    ) {
+      const style = styleFor(parent);
+      if (style.display === 'none' || style.contentVisibility === 'hidden')
+        return '';
+      if (parent.tagName === 'DETAILS' && !parent.hasAttribute('open')) {
+        const summary = parent.querySelector(':scope > summary');
+        if (!summary?.contains(mainElement)) return '';
+      }
+    }
 
-    // innerText (not textContent) so hidden elements stay out and block-level
-    // structure survives as line breaks.
-    return (clone.innerText || clone.textContent || '').trim();
+    /** @type {string[]} */
+    const parts = [];
+    const lineBreak = (count = 1) => {
+      const last = parts.at(-1);
+      if (last?.endsWith('\n'.repeat(count))) return;
+      if (last) parts[parts.length - 1] = last.trimEnd();
+      parts.push('\n'.repeat(count));
+    };
+    /** @param {Element} element @returns {void} */
+    const visit = element => {
+      if (element.matches(unwanted)) return;
+      const style = styleFor(element);
+      if (style.display === 'none' || style.contentVisibility === 'hidden')
+        return;
+
+      const visible =
+        style.visibility !== 'hidden' && style.visibility !== 'collapse';
+      if (element.tagName === 'BR') {
+        if (visible) lineBreak();
+        return;
+      }
+      const block = /^(block|flow-root|list-item|flex|grid|table)/.test(
+        style.display
+      );
+      // Blank lines retain the paragraph boundaries consumed by summary chunking.
+      const breaks = element.tagName === 'P' ? 2 : 1;
+      if (block) lineBreak(breaks);
+      // Closed details render only their first direct summary, not the body.
+      const collapsed =
+        element.tagName === 'DETAILS' && !element.hasAttribute('open');
+      const children = collapsed
+        ? [element.querySelector(':scope > summary')]
+        : element.childNodes;
+      for (const child of children) {
+        if (!child) continue;
+        if (child.nodeType === Node.ELEMENT_NODE) {
+          // visibility can be explicitly restored by a child of a hidden parent.
+          visit(/** @type {Element} */ (child));
+        } else if (child.nodeType === Node.TEXT_NODE && visible) {
+          let text = child.textContent || '';
+          if (!/^(pre|break-spaces)/.test(style.whiteSpace)) {
+            text = text.replace(/\s+/g, ' ');
+            if (/[\s]$/.test(parts.at(-1) || '')) text = text.trimStart();
+          }
+          if (text) parts.push(text);
+        }
+      }
+      if (block) lineBreak(breaks);
+    };
+    visit(mainElement);
+    return parts.join('').trim();
   }
 
   extractHeadings() {
     return Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
       .map(heading => ({
         level: Number(heading.tagName[1]),
-        text: heading.textContent?.trim() || ''
+        text: heading.textContent?.trim() || '',
       }))
       .filter(heading => heading.text);
   }
@@ -121,7 +211,7 @@ class PageContentExtractor {
         return {
           href: link.href,
           text: link.textContent?.trim() || '',
-          isExternal: link.hostname !== window.location.hostname
+          isExternal: link.hostname !== window.location.hostname,
         };
       })
       .filter(link => link.href.startsWith('http'));
@@ -133,7 +223,7 @@ class PageContentExtractor {
         src: image.src,
         alt: image.alt,
         width: image.naturalWidth,
-        height: image.naturalHeight
+        height: image.naturalHeight,
       }))
       .filter(image => image.src && !image.src.startsWith('data:'));
   }

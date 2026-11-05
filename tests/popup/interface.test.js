@@ -47,6 +47,7 @@ async function openPopup({
   preferences = {},
   providerStatus = {},
   overrides = {},
+  waitForReady = true,
 } = {}) {
   responses = {
     GET_USER_PREFERENCES: {
@@ -89,10 +90,41 @@ async function openPopup({
   await import('../../scripts/popup-main.js');
   document.dispatchEvent(new Event('DOMContentLoaded'));
 
-  await vi.waitFor(() =>
-    expect(el('loading-overlay').style.display).toBe('none')
-  );
+  if (waitForReady)
+    await vi.waitFor(() =>
+      expect(el('loading-overlay').style.display).toBe('none')
+    );
 }
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function importBook() {
+  const input = el('document-file');
+  Object.defineProperty(input, 'files', {
+    configurable: true,
+    value: [
+      {
+        name: 'book-B.txt',
+        size: 24,
+        text: async () => 'Book B is about bananas.',
+      },
+    ],
+  });
+  input.dispatchEvent(new Event('change'));
+  await vi.waitFor(() => {
+    expect(text('current-page-title')).toBe('book-B.txt');
+    expect(el('loading-overlay').style.display).toBe('none');
+  });
+}
+
+// Drain the message continuation chain before asserting that stale work stayed inert.
+const settleResponses = () => new Promise(done => setTimeout(done, 0));
 
 describe('popup', () => {
   beforeEach(() => {
@@ -100,6 +132,304 @@ describe('popup', () => {
   });
 
   describe('learning workspace', () => {
+    it.each([true, false])(
+      'ignores old source links after import (success=%s)',
+      async success => {
+        const pending = deferred();
+        await openPopup();
+        chrome.tabs.sendMessage.mockReturnValue(pending.promise);
+        el('extract-links-btn').click();
+        await vi.waitFor(() =>
+          expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, {
+            action: 'extractLinks',
+          })
+        );
+        await importBook();
+        pending.resolve(
+          success
+            ? {
+                success: true,
+                data: [
+                  { href: 'https://old.example/', text: 'Old source link' },
+                ],
+              }
+            : { success: false, error: 'Old source error' }
+        );
+        await settleResponses();
+        expect(el('tools-results').style.display).toBe('none');
+        expect(text('tools-results')).not.toMatch(/Old source/);
+      }
+    );
+
+    it.each([true, false])(
+      'ignores a previous document analysis response after import (success=%s)',
+      async success => {
+        const pending = deferred();
+        await openPopup({
+          overrides: { EXTRACT_KEY_INSIGHTS: pending.promise },
+        });
+        document.querySelector('[data-type="insights"]').click();
+        await vi.waitFor(() =>
+          expect(sentPayload('EXTRACT_KEY_INSIGHTS')?.text).toBe(PAGE.mainText)
+        );
+        await importBook();
+        pending.resolve(
+          success
+            ? { success: true, data: { text: 'Old article result' } }
+            : { success: false, error: 'Old article failure' }
+        );
+        await settleResponses();
+        expect(text('current-page-title')).toBe('book-B.txt');
+        expect(text('insights-result')).toBe(
+          'Run this analysis for this document.'
+        );
+      }
+    );
+
+    it.each([true, false])(
+      'keeps an imported document when startup extraction finishes late (success=%s)',
+      async success => {
+        const pending = deferred();
+        await openPopup({
+          waitForReady: false,
+          overrides: { EXTRACT_PAGE_CONTENT: pending.promise },
+        });
+        await vi.waitFor(() =>
+          expect(sentPayload('EXTRACT_PAGE_CONTENT')).toEqual({ tabId: 7 })
+        );
+        await importBook();
+        pending.resolve(
+          success
+            ? { success: true, data: PAGE }
+            : { success: false, error: 'Old extraction failed' }
+        );
+        await settleResponses();
+        expect(text('current-page-title')).toBe('book-B.txt');
+        expect(text('current-page-status')).toContain('Ready');
+        responses.ANSWER_CONTEXTUAL_QUESTION = {
+          success: true,
+          data: { answer: 'Bananas.' },
+        };
+        el('chat-input').value = 'What fruit?';
+        el('send-chat-btn').click();
+        await vi.waitFor(() =>
+          expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')?.context).toBe(
+            'Book B is about bananas.'
+          )
+        );
+      }
+    );
+
+    it('keeps an imported document when preferences finish loading before extraction', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: { GET_USER_PREFERENCES: pending.promise },
+      });
+      await vi.waitFor(() =>
+        expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ actionType: 'GET_USER_PREFERENCES' })
+        )
+      );
+      await importBook();
+      pending.resolve({ success: true, data: { theme: 'light' } });
+      await settleResponses();
+      expect(text('current-page-title')).toBe('book-B.txt');
+      expect(sentPayload('EXTRACT_PAGE_CONTENT')).toBeUndefined();
+    });
+
+    it('does not restore an old history snapshot after a successful clear', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: {
+          GET_DOCUMENT_HISTORY: pending.promise,
+          CLEAR_DOCUMENT_CHAT: { success: true, data: { removed: 1 } },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(sentPayload('GET_DOCUMENT_HISTORY')?.url).toBe(PAGE.url)
+      );
+      el('clear-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('chat-memory-status')).toContain('Chat cleared')
+      );
+      pending.resolve({
+        success: true,
+        data: {
+          conversations: [{ question: 'Old question', answer: 'Old answer' }],
+          memoryEnabled: true,
+        },
+      });
+      await settleResponses();
+      expect(text('chat-history')).toBe('');
+      expect(text('chat-memory-status')).toContain('Chat cleared');
+      responses.ANSWER_CONTEXTUAL_QUESTION = {
+        success: true,
+        data: { answer: 'Fresh answer' },
+      };
+      el('chat-input').value = 'Fresh question';
+      el('send-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')).toBeDefined()
+      );
+      expect(
+        JSON.stringify(
+          sentPayload('ANSWER_CONTEXTUAL_QUESTION').conversationHistory
+        )
+      ).not.toContain('Old');
+    });
+
+    it.each(['send', 'clear'])(
+      'restores the saved summary when %s invalidates only pending chat history',
+      async action => {
+        const pending = deferred();
+        await openPopup({
+          waitForReady: false,
+          overrides: {
+            GET_DOCUMENT_HISTORY: pending.promise,
+            CLEAR_DOCUMENT_CHAT: { success: true, data: { removed: 1 } },
+            ANSWER_CONTEXTUAL_QUESTION: {
+              success: true,
+              data: { answer: 'Fresh answer' },
+            },
+          },
+        });
+        await vi.waitFor(() =>
+          expect(sentPayload('GET_DOCUMENT_HISTORY')).toBeDefined()
+        );
+        if (action === 'send') {
+          el('chat-input').value = 'Fresh question';
+          el('send-chat-btn').click();
+          await vi.waitFor(() =>
+            expect(text('chat-history')).toContain('Fresh answer')
+          );
+        } else {
+          el('clear-chat-btn').click();
+          await vi.waitFor(() =>
+            expect(text('chat-memory-status')).toContain('Chat cleared')
+          );
+        }
+        pending.resolve({
+          success: true,
+          data: {
+            summaries: [
+              { summary: 'Saved summary', provider: 'test', model: 'fixture' },
+            ],
+            conversations: [{ question: 'Old question', answer: 'Old answer' }],
+            memoryEnabled: true,
+          },
+        });
+        await vi.waitFor(() =>
+          expect(text('summary-content')).toContain('Saved summary')
+        );
+        expect(text('chat-history')).not.toContain('Old answer');
+      }
+    );
+
+    it('keeps a freshly generated summary when an older history snapshot arrives', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: {
+          GET_DOCUMENT_HISTORY: pending.promise,
+          GENERATE_CONTENT_SUMMARY: {
+            success: true,
+            data: {
+              summary: 'Fresh summary',
+              provider: 'test',
+              model: 'fixture',
+            },
+          },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(sentPayload('GET_DOCUMENT_HISTORY')).toBeDefined()
+      );
+      el('generate-summary-btn').click();
+      await vi.waitFor(() =>
+        expect(text('summary-content')).toContain('Fresh summary')
+      );
+      pending.resolve({
+        success: true,
+        data: {
+          summaries: [
+            { summary: 'Old summary', provider: 'test', model: 'fixture' },
+          ],
+          conversations: [],
+          memoryEnabled: true,
+        },
+      });
+      await settleResponses();
+      expect(text('summary-content')).toBe('Fresh summary');
+    });
+
+    it('allows pending saved history to restore after clearing fails', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: {
+          GET_DOCUMENT_HISTORY: pending.promise,
+          CLEAR_DOCUMENT_CHAT: {
+            success: false,
+            error: 'Could not clear saved chat',
+          },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(sentPayload('GET_DOCUMENT_HISTORY')).toBeDefined()
+      );
+      el('clear-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('toast-container')).toContain('Could not clear saved chat')
+      );
+      pending.resolve({
+        success: true,
+        data: {
+          conversations: [
+            { question: 'Saved question', answer: 'Saved answer' },
+          ],
+          memoryEnabled: true,
+        },
+      });
+      await vi.waitFor(() =>
+        expect(text('chat-history')).toContain('Saved answer')
+      );
+      expect(text('chat-memory-status')).toContain('Restored 1');
+    });
+
+    it('keeps a new exchange when an older restoration snapshot arrives', async () => {
+      const pending = deferred();
+      await openPopup({
+        waitForReady: false,
+        overrides: {
+          GET_DOCUMENT_HISTORY: pending.promise,
+          ANSWER_CONTEXTUAL_QUESTION: {
+            success: true,
+            data: { answer: 'Fresh answer' },
+          },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(sentPayload('GET_DOCUMENT_HISTORY')).toBeDefined()
+      );
+      el('chat-input').value = 'Fresh question';
+      el('send-chat-btn').click();
+      await vi.waitFor(() =>
+        expect(text('chat-history')).toContain('Fresh answer')
+      );
+      pending.resolve({
+        success: true,
+        data: {
+          conversations: [{ question: 'Old question', answer: 'Old answer' }],
+          memoryEnabled: true,
+        },
+      });
+      await settleResponses();
+      expect(text('chat-history')).toContain('Fresh answer');
+      expect(text('chat-history')).not.toContain('Old answer');
+    });
+
     it('keeps a generated summary visible when it could not be saved', async () => {
       await openPopup({
         overrides: {
@@ -378,6 +708,7 @@ describe('popup', () => {
       await vi.waitFor(() =>
         expect(text('current-page-title')).toBe('new.txt')
       );
+      expect(el('summary-empty').style.display).toBe('flex');
       expect(el('translation-results').style.display).toBe('none');
       expect(text('insights-result')).not.toContain('old article');
       el('extract-links-btn').click();
@@ -387,16 +718,34 @@ describe('popup', () => {
       expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('persists translation preferences on change', async () => {
+    it.each([
+      ['target-language', 'targetLanguage'],
+      ['source-language', 'sourceLanguage'],
+    ])(
+      'persists only the changed translation preference: %s',
+      async (id, field) => {
+        await openPopup({
+          overrides: { UPDATE_USER_PREFERENCES: { success: true } },
+        });
+        el(id).value = 'fr';
+        el(id).dispatchEvent(new Event('change'));
+        await vi.waitFor(() =>
+          expect(sentPayload('UPDATE_USER_PREFERENCES')).toEqual({
+            [field]: 'fr',
+          })
+        );
+      }
+    );
+
+    it('persists both languages after an explicit swap', async () => {
       await openPopup({
-        overrides: { UPDATE_USER_PREFERENCES: { success: true } },
+        preferences: { sourceLanguage: 'fr', targetLanguage: 'en' },
       });
-      el('target-language').value = 'fr';
-      el('target-language').dispatchEvent(new Event('change'));
+      el('swap-languages').click();
       await vi.waitFor(() =>
         expect(sentPayload('UPDATE_USER_PREFERENCES')).toEqual({
+          sourceLanguage: 'en',
           targetLanguage: 'fr',
-          sourceLanguage: 'auto',
         })
       );
     });
@@ -543,6 +892,7 @@ describe('popup', () => {
         expect(el('summary-results').style.display).toBe('block')
       );
       expect(el('summary-content').innerHTML).toContain('<li>point one</li>');
+      expect(el('summary-empty').style.display).toBe('none');
       expect(text('summary-provider')).toBe('anthropic · claude-opus-5');
       expect(text('summary-confidence')).toBe(
         'Whole page, summarized across 3 sections'
@@ -902,6 +1252,63 @@ describe('popup', () => {
   });
 
   describe('tabs', () => {
+    it('exposes the selected tab and its panel and keeps keyboard focus on the tabs', async () => {
+      await openPopup();
+      const summary = document.querySelector('[data-tab="summary"]');
+      const chat = document.querySelector('[data-tab="chat"]');
+      expect(summary.getAttribute('role')).toBe('tab');
+      expect(summary.getAttribute('aria-selected')).toBe('true');
+      expect(chat.tabIndex).toBe(-1);
+      summary.focus();
+      summary.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+      );
+      expect(document.activeElement).toBe(chat);
+      expect(chat.getAttribute('aria-selected')).toBe('true');
+      expect(chat.tabIndex).toBe(0);
+      expect(el('summary-tab').hidden).toBe(true);
+      expect(el('chat-tab').hidden).toBe(false);
+      expect(el('chat-tab').getAttribute('aria-labelledby')).toBe(chat.id);
+      chat.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'End', bubbles: true })
+      );
+      expect(document.activeElement.dataset.tab).toBe('tools');
+      document.activeElement.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+      );
+      expect(document.activeElement).toBe(summary);
+      summary.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })
+      );
+      expect(document.activeElement.dataset.tab).toBe('tools');
+      document.activeElement.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Home', bubbles: true })
+      );
+      expect(document.activeElement).toBe(summary);
+    });
+
+    it('preserves the complete study prompt behind a short action label', async () => {
+      await openPopup({
+        overrides: {
+          ANSWER_CONTEXTUAL_QUESTION: {
+            success: true,
+            data: { answer: 'Study notes' },
+          },
+        },
+      });
+      document.querySelector('[data-tab="chat"]').click();
+      const chip = [...document.querySelectorAll('.suggestion-chip')].find(
+        button => button.textContent.trim() === 'Study guide'
+      );
+      expect(chip).toBeDefined();
+      chip.click();
+      await vi.waitFor(() =>
+        expect(sentPayload('ANSWER_CONTEXTUAL_QUESTION')?.question).toBe(
+          'Make a study guide with key concepts and examples from this document'
+        )
+      );
+    });
+
     it('activates the pane for the clicked tab', async () => {
       await openPopup();
 

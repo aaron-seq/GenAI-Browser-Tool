@@ -137,7 +137,12 @@ class OptionsPage {
     if (!update) return;
 
     try {
-      this.settings = await this.configManager.updateUserPreferences(update);
+      const response = await chrome.runtime.sendMessage({
+        actionType: 'UPDATE_USER_PREFERENCES',
+        payload: update,
+      });
+      if (!response.success) throw new Error(response.error);
+      this.settings = response.data;
       this.showSaveIndicator();
     } catch (error) {
       /** @type {any} */
@@ -149,12 +154,12 @@ class OptionsPage {
   async resetSettings() {
     if (!confirm('Reset all settings, including saved API keys?')) return;
     try {
-      await this.configManager.setUserPreferences(
-        this.configManager.defaultSettings
-      );
-      this.settings = this.configManager.withDefaults(
-        this.configManager.defaultSettings
-      );
+      const response = await chrome.runtime.sendMessage({
+        actionType: 'RESET_USER_PREFERENCES',
+        payload: {},
+      });
+      if (!response.success) throw new Error(response.error);
+      this.settings = response.data;
       this.render();
       this.showSaveIndicator('Settings reset to defaults');
     } catch {
